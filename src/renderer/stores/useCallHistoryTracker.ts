@@ -1,56 +1,64 @@
 import { useEffect, useRef } from 'react';
 import { useLineStore } from './useLineStore';
 import { useHistoryStore } from './useHistoryStore';
-import { LineState } from '../types/swyx';
+import { LineInfo, LineState } from '../types/swyx';
 
+/** Trackt Leitungsänderungen und erstellt automatisch History-Einträge. */
 export function useCallHistoryTracker() {
     const lines = useLineStore((s) => s.lines);
     const addEntry = useHistoryStore((s) => s.addEntry);
 
-    const previousLines = useRef(lines);
-    const callMetadata = useRef(new Map<number, { direction: 'inbound' | 'outbound', startTime: number }>());
+    const previousLines = useRef<LineInfo[]>([]);
+    const callMetadata = useRef(new Map<number, { direction: 'inbound' | 'outbound', startTime: number, callerName: string, callerNumber: string }>());
 
     useEffect(() => {
         lines.forEach((currentLine) => {
             const prevLine = previousLines.current.find((l) => l.id === currentLine.id);
-            if (!prevLine) return;
-
             const metadata = callMetadata.current.get(currentLine.id);
+            const prevState = prevLine?.state ?? LineState.Inactive;
 
-            // Track incoming call start
-            if (prevLine.state === LineState.Inactive && currentLine.state === LineState.Ringing) {
-                callMetadata.current.set(currentLine.id, { direction: 'inbound', startTime: Date.now() });
-            }
-
-            // Track outgoing call start
+            // === Neuen Anruf erkennen (Inactive/neu → Dialing/Ringing/HookOff) ===
             if (
-                prevLine.state === LineState.Inactive &&
-                (currentLine.state === LineState.Dialing || currentLine.state === LineState.Alerting || currentLine.state === LineState.HookOffInternal || currentLine.state === LineState.HookOffExternal)
+                !metadata &&
+                (prevState === LineState.Inactive || !prevLine) &&
+                currentLine.state !== LineState.Inactive &&
+                currentLine.state !== LineState.Terminated &&
+                currentLine.state !== LineState.Disabled
             ) {
-                callMetadata.current.set(currentLine.id, { direction: 'outbound', startTime: Date.now() });
+                const isInbound = currentLine.state === LineState.Ringing || currentLine.state === LineState.Knocking;
+                callMetadata.current.set(currentLine.id, {
+                    direction: isInbound ? 'inbound' : 'outbound',
+                    startTime: Date.now(),
+                    callerName: currentLine.callerName ?? '',
+                    callerNumber: currentLine.callerNumber ?? '',
+                });
             }
 
-            // Track call end
-            const wasActive = prevLine.state !== LineState.Inactive && prevLine.state !== LineState.Terminated;
+            // === Caller-Info updaten während des Anrufs (z.B. wenn Name später kommt) ===
+            if (metadata) {
+                if (currentLine.callerName && !metadata.callerName)
+                    metadata.callerName = currentLine.callerName;
+                if (currentLine.callerNumber && !metadata.callerNumber)
+                    metadata.callerNumber = currentLine.callerNumber;
+            }
+
+            // === Anruf-Ende erkennen ===
+            const wasActive = prevState !== LineState.Inactive && prevState !== LineState.Terminated;
             const isNowInactive = currentLine.state === LineState.Inactive || currentLine.state === LineState.Terminated;
 
             if (wasActive && isNowInactive && metadata) {
-                // Determine missed
-                // If it was ringing and became inactive without becoming active
-                const wasAnswered = currentLine.duration !== undefined && currentLine.duration > 0;
-                const isMissed = metadata.direction === 'inbound' && !wasAnswered && prevLine.state === LineState.Ringing;
+                const duration = currentLine.duration ?? prevLine?.duration ?? 0;
+                const wasAnswered = duration > 0 || prevState === LineState.Active;
+                const isMissed = metadata.direction === 'inbound' && !wasAnswered;
 
-                const duration = currentLine.duration ?? prevLine.duration ?? 0;
+                const callerName = metadata.callerName || currentLine.callerName || prevLine?.callerName || '';
+                const callerNumber = metadata.callerNumber || currentLine.callerNumber || prevLine?.callerNumber || '';
 
-                // Only log if we have a recognizable caller (or we tried dialing at least something)
-                const callerName = currentLine.callerName || prevLine.callerName || '';
-                const callerNumber = currentLine.callerNumber || prevLine.callerNumber || 'Unbekannt';
-
-                if (callerNumber !== 'Unbekannt' || callerName !== '') {
+                if (callerNumber || callerName) {
                     addEntry({
                         id: crypto.randomUUID(),
                         callerName,
-                        callerNumber,
+                        callerNumber: callerNumber || 'Unbekannt',
                         direction: isMissed ? 'missed' : metadata.direction,
                         timestamp: metadata.startTime,
                         duration,
@@ -58,6 +66,32 @@ export function useCallHistoryTracker() {
                 }
 
                 callMetadata.current.delete(currentLine.id);
+            }
+
+            // === Leitung verschwunden (war aktiv, ist jetzt nicht mehr in lines) ===
+            // Wird unten nach der Schleife behandelt
+        });
+
+        // Prüfe ob Leitungen aus previousLines verschwunden sind (Anruf beendet)
+        previousLines.current.forEach((prevLine) => {
+            const stillExists = lines.find((l) => l.id === prevLine.id);
+            if (!stillExists) {
+                const metadata = callMetadata.current.get(prevLine.id);
+                if (metadata && prevLine.state !== LineState.Inactive) {
+                    const callerName = metadata.callerName || prevLine.callerName || '';
+                    const callerNumber = metadata.callerNumber || prevLine.callerNumber || '';
+                    if (callerNumber || callerName) {
+                        addEntry({
+                            id: crypto.randomUUID(),
+                            callerName,
+                            callerNumber: callerNumber || 'Unbekannt',
+                            direction: metadata.direction,
+                            timestamp: metadata.startTime,
+                            duration: prevLine.duration ?? 0,
+                        });
+                    }
+                    callMetadata.current.delete(prevLine.id);
+                }
             }
         });
 

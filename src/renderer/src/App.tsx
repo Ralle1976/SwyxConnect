@@ -26,9 +26,17 @@ export function App() {
   const updateLine = useLineStore((s) => s.updateLine)
   const setColleagues = usePresenceStore((s) => s.setColleagues)
   const theme = useSettingsStore((s) => s.theme)
+  const loadFromMain = useSettingsStore((s) => s.loadFromMain)
 
   // Initialize call history tracking
   useCallHistoryTracker()
+
+  // Load settings from Main Process on connect
+  useEffect(() => {
+    if (isConnected) {
+      loadFromMain()
+    }
+  }, [isConnected, loadFromMain])
 
   useEffect(() => { applyTheme(theme) }, [theme])
 

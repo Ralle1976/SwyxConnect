@@ -148,6 +148,7 @@ export interface AppSettings {
   pluginsDirectory: string;
   startMinimized: boolean;
   closeToTray: boolean;
+  numberOfLines: number;
 }
 
 export interface TeamsTokens {
