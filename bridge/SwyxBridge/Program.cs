@@ -29,6 +29,7 @@ static class Program
     private static VoicemailHandler? _voicemailHandler;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
+    private static System.Windows.Forms.Timer? _windowSuppressor;
 
     [STAThread]
     static void Main(string[] args)
@@ -79,9 +80,10 @@ static class Program
 
         Logging.Info("Message Pump startet...");
         Application.Run(appCtx);
-
         // Cleanup
         Logging.Info("SwyxBridge beendet.");
+        _windowSuppressor?.Stop();
+        _windowSuppressor?.Dispose();
         _heartbeat?.Stop();
         _rpcServer?.Stop();
         EventSink.Unsubscribe();
@@ -127,6 +129,15 @@ static class Program
             Name = "JsonRpcServer"
         };
         serverThread.Start();
+
+        // SwyxIt!-Fensterunterdrückung (WinForms Timer → läuft auf STA-Thread)
+        _windowSuppressor = new System.Windows.Forms.Timer { Interval = 1500 };
+        _windowSuppressor.Tick += (s, e) =>
+        {
+            _lineManager?.SuppressSwyxWindowPeriodic();
+        };
+        _windowSuppressor.Start();
+        Logging.Info("SwyxIt!-Fensterunterdrückung aktiviert (alle 1.5s).");
 
         // Connected-Status melden
         JsonRpcEmitter.EmitEvent("bridgeState", new

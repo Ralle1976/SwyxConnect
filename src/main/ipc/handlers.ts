@@ -100,6 +100,10 @@ export function registerIpcHandlers(
     }
   );
 
+  ipcMain.handle(IPC_CHANNELS.SET_NUMBER_OF_LINES, async (_event, count: number) => {
+    return bridgeManager.sendRequest('setNumberOfLines', { count });
+  });
+
   ipcMain.handle(IPC_CHANNELS.MUTE, async (_event, lineId: number) => {
     return bridgeManager.sendRequest('mute', { lineId });
   });

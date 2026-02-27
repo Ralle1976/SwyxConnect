@@ -94,6 +94,55 @@ public sealed class LineManager
         throw new InvalidOperationException($"Leitung {lineId} nicht verfügbar.");
     }
 
+    // --- Leitungsanzahl setzen ---
+
+    public void SetNumberOfLines(int count)
+    {
+        if (count < 1 || count > 8) count = 2;
+        Logging.Info($"LineManager: SetNumberOfLines({count})");
+        try
+        {
+            GetCom().DispSetNumberOfLines(count);
+            int actual = GetLineCount();
+            Logging.Info($"LineManager: Nach SetNumberOfLines → {actual} Leitungen.");
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: SetNumberOfLines fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    // --- Periodische Fensterunterdrückung ---
+
+    /// <summary>
+    /// Wird per Timer aufgerufen. Prüft ob SwyxIt!-Fenster im Vordergrund
+    /// ist und minimiert es automatisch.
+    /// </summary>
+    public void SuppressSwyxWindowPeriodic()
+    {
+        try
+        {
+            var fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero) return;
+
+            GetWindowThreadProcessId(fg, out uint processId);
+            if (processId == 0) return;
+
+            try
+            {
+                var proc = Process.GetProcessById((int)processId);
+                var name = proc.ProcessName.ToLowerInvariant();
+                if (name.Contains("swyxit") || name == "swyxitc")
+                {
+                    ShowWindow(fg, SW_SHOWMINNOACTIVE);
+                    Logging.Info($"LineManager: SwyxIt!-Fenster unterdrückt (Timer, PID={processId})");
+                }
+            }
+            catch { /* Prozess nicht mehr verfügbar */ }
+        }
+        catch { /* Ignore */ }
+    }
+
     // --- Anruf-Steuerung ---
 
     public void Dial(string number)

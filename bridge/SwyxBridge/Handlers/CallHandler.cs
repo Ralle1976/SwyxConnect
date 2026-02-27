@@ -20,10 +20,10 @@ public sealed class CallHandler
     public bool CanHandle(string method) => method switch
     {
         "dial" or "answer" or "hangup" or "hold" or "activate"
-        or "transfer" or "getLines" or "getLineState" or "getLineDetails" => true,
+        or "transfer" or "getLines" or "getLineState" or "getLineDetails"
+        or "setNumberOfLines" => true,
         _ => false
     };
-
     public void Handle(JsonRpcRequest req)
     {
         try
@@ -39,6 +39,7 @@ public sealed class CallHandler
                 "getLines" => _lm.GetAllLines(),
                 "getLineState" => HandleGetLineState(req.Params),
                 "getLineDetails" => HandleGetLineDetails(req.Params),
+                "setNumberOfLines" => HandleSetNumberOfLines(req.Params),
                 _ => throw new InvalidOperationException($"Unbekannte Methode: {req.Method}")
             };
 
@@ -118,6 +119,13 @@ public sealed class CallHandler
     {
         int lineId = GetInt(p, "lineId");
         return _lm.GetLineDetails(lineId);
+    }
+
+    private object? HandleSetNumberOfLines(JsonElement? p)
+    {
+        int count = GetInt(p, "count");
+        _lm.SetNumberOfLines(count);
+        return new { ok = true };
     }
 
     // --- Param Helpers ---

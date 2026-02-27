@@ -26,6 +26,7 @@ export const IPC_CHANNELS = {
   SEND_DTMF: 'swyx:sendDtmf',
   MUTE: 'swyx:mute',
   UNMUTE: 'swyx:unmute',
+  SET_NUMBER_OF_LINES: 'swyx:setNumberOfLines',
   // Event channels (main → renderer)
   LINE_STATE_CHANGED: 'swyx:lineStateChanged',
   BRIDGE_STATE_CHANGED: 'swyx:bridgeStateChanged',

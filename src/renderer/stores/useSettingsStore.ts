@@ -91,6 +91,10 @@ export const useSettingsStore = create<SettingsStoreState>()(
       setNumberOfLines: (count) => {
         set({ numberOfLines: count });
         get().saveToMain({ numberOfLines: count } as Partial<AppSettings>);
+        // Sofort an Bridge/COM senden
+        if (window.swyxApi?.setNumberOfLines) {
+          window.swyxApi.setNumberOfLines(count).catch(() => {});
+        }
       },
 
       loadFromMain: async () => {
@@ -108,6 +112,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
               audioInputVolume: settings.audioInputVolume ?? 80,
               audioOutputVolume: settings.audioOutputVolume ?? 80,
               teamsEnabled: settings.teamsEnabled ?? false,
+              numberOfLines: ((settings as Record<string, unknown>).numberOfLines as number | undefined) ?? 2,
             });
           }
         } catch { /* Bridge noch nicht bereit */ }

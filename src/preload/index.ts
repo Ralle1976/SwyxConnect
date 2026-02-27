@@ -40,6 +40,9 @@ const swyxApi = {
   unmute: (lineId: number): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.UNMUTE, lineId),
 
+  setNumberOfLines: (count: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_NUMBER_OF_LINES, count),
+
   // --- Abfragen ---
   getLines: (): Promise<LineInfo[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_LINES),

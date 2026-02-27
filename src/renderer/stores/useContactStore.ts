@@ -17,11 +17,8 @@ export const useContactStore = create<ContactStoreState>((set) => ({
   searchContacts: async (query) => {
     set({ searchQuery: query, loading: true });
     try {
-      if (query.trim().length === 0) {
-        set({ contacts: [], loading: false });
-        return;
-      }
-      const raw = await window.swyxApi.getContacts(query);
+      // Leerer Query = Phonebook laden (alle Kontakte)
+      const raw = await window.swyxApi.getContacts(query.trim());
       const contacts = Array.isArray(raw) ? raw : [];
       set({ contacts, loading: false });
     } catch (err) {

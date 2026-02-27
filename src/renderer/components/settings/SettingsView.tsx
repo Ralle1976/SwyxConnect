@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Sun,
   Moon,
@@ -14,8 +14,8 @@ import {
   ToggleRight,
   PanelLeftClose,
   PanelLeftOpen,
-  MinusCircle,
-  XCircle,
+  Play,
+  Square,
 } from 'lucide-react'
 import { useSettingsStore, applyTheme } from '../../stores/useSettingsStore'
 
@@ -146,7 +146,110 @@ function SelectRow({
   )
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Audio Test Component ────────────────────────────────────────────────────────────────
+
+function AudioTestButton({ type }: { type: 'speaker' | 'mic' }) {
+  const [testing, setTesting] = useState(false)
+  const [micLevel, setMicLevel] = useState(0)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const animRef = useRef<number>(0)
+
+  const stopTest = useCallback(() => {
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {})
+      audioCtxRef.current = null
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+    cancelAnimationFrame(animRef.current)
+    setMicLevel(0)
+    setTesting(false)
+  }, [])
+
+  const testSpeaker = useCallback(async () => {
+    setTesting(true)
+    const ctx = new AudioContext()
+    audioCtxRef.current = ctx
+    // Testton: 440Hz Sinus, 2 Sekunden, sanftes Fade
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 440
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 2)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 2)
+    osc.onended = () => stopTest()
+  }, [stopTest])
+
+  const testMic = useCallback(async () => {
+    setTesting(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+      const source = ctx.createMediaStreamSource(stream)
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 256
+      source.connect(analyser)
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      const tick = () => {
+        analyser.getByteFrequencyData(data)
+        const avg = data.reduce((a, b) => a + b, 0) / data.length
+        setMicLevel(Math.min(100, Math.round(avg * 1.5)))
+        animRef.current = requestAnimationFrame(tick)
+      }
+      tick()
+      // 5 Sekunden aufnehmen, dann stoppen
+      setTimeout(() => stopTest(), 5000)
+    } catch {
+      stopTest()
+    }
+  }, [stopTest])
+
+  const handleClick = () => {
+    if (testing) {
+      stopTest()
+    } else {
+      type === 'speaker' ? testSpeaker() : testMic()
+    }
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      className={[
+        'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all flex-1',
+        testing
+          ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800'
+          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-transparent',
+      ].join(' ')}
+    >
+      {testing ? <Square size={12} /> : <Play size={12} />}
+      <span className="flex-1 text-left">
+        {type === 'speaker'
+          ? (testing ? 'Stopp' : 'Lautsprecher testen')
+          : (testing ? 'Stopp' : 'Mikrofon testen')}
+      </span>
+      {type === 'mic' && testing && (
+        <div className="w-16 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-emerald-500 rounded-full transition-all duration-75"
+            style={{ width: `${micLevel}%` }}
+          />
+        </div>
+      )}
+    </button>
+  )
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────────────────────────
 
 export default function SettingsView() {
   const {
@@ -328,6 +431,12 @@ export default function SettingsView() {
             value={audioOutputVolume}
             onChange={setAudioOutputVolume}
           />
+
+          {/* Audio-Test Buttons */}
+          <div className="flex gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <AudioTestButton type="speaker" />
+            <AudioTestButton type="mic" />
+          </div>
         </div>
       </SectionCard>
 
