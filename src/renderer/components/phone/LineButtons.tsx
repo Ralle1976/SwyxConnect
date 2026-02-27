@@ -48,7 +48,7 @@ export function LineButtons() {
             {/* Line number + state dot */}
             <div className="flex items-center gap-2 w-full">
               <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                Leitung {line.id}
+                Leitung {line.id + 1}
               </span>
               <span
                 className={`ml-auto w-2.5 h-2.5 rounded-full shadow-md flex-shrink-0 ${dotClass}`}

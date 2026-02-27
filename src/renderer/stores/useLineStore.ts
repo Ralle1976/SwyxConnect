@@ -17,7 +17,17 @@ export const useLineStore = create<LineStoreState>((set) => ({
   selectedLineId: null,
   activeCall: null,
 
-  setLines: (lines) => set({ lines }),
+  setLines: (lines) => set(() => {
+    // Auto-select erste aktive Leitung (state != Inactive), damit ActiveCallPanel erscheint
+    const activeLine = lines.find(
+      (l) => l.state !== LineState.Inactive && l.state !== LineState.Terminated && l.state !== LineState.Disabled
+    );
+    const selectedLineId = activeLine ? activeLine.id : (lines.length > 0 ? lines[0].id : null);
+    return {
+      lines: lines.map((l) => ({ ...l, isSelected: l.id === selectedLineId })),
+      selectedLineId,
+    };
+  }),
 
   updateLine: (lineId, updates) =>
     set((state) => ({

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { TitleBar } from '../components/layout/TitleBar'
 import { Sidebar } from '../components/layout/Sidebar'
@@ -40,6 +40,22 @@ export function App() {
     const unsub4 = window.swyxApi.onCallEnded((data) => { updateLine(data.lineId, { state: LineState.Inactive }) })
     return () => { unsub1(); unsub2(); unsub3(); unsub4() }
   }, [setLines, setActiveCall, setColleagues, updateLine])
+
+  // Initiale Leitungsabfrage wenn Bridge verbunden
+  const fetchInitialLines = useCallback(async () => {
+    if (!window.swyxApi) return
+    try {
+      const result = await window.swyxApi.getLines()
+      const fetchedLines = Array.isArray(result)
+        ? result
+        : (result as { lines: unknown[] } | null)?.lines ?? []
+      if (fetchedLines.length > 0) setLines(fetchedLines as import('../types/swyx').LineInfo[])
+    } catch { /* Bridge noch nicht bereit */ }
+  }, [setLines])
+
+  useEffect(() => {
+    if (isConnected) fetchInitialLines()
+  }, [isConnected, fetchInitialLines])
 
   const ringing = getRingingLines(lines)
 

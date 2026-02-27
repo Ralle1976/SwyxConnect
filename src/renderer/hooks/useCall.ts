@@ -16,10 +16,21 @@ export interface CallHookResult {
 
 export function useCall(): CallHookResult {
   const updateLine = useLineStore((s) => s.updateLine);
+  const setLines   = useLineStore((s) => s.setLines);
 
   const dial = useCallback(async (number: string) => {
     await window.swyxApi.dial(number);
-  }, []);
+    // Sofort nach dem Wählen den Leitungsstatus abfragen und UI aktualisieren
+    try {
+      const result = await window.swyxApi.getLines();
+      const lines = Array.isArray(result)
+        ? result
+        : (result as { lines: unknown[] } | null)?.lines ?? [];
+      if (lines.length > 0) setLines(lines as import('../types/swyx').LineInfo[]);
+    } catch {
+      // Fehler ignorieren — lineStateChanged-Event folgt ohnehin
+    }
+  }, [setLines]);
 
   const answer = useCallback(async (lineId: number) => {
     await window.swyxApi.answer(lineId);

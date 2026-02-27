@@ -26,13 +26,73 @@ public sealed class LineManager
     public LineManager(SwyxConnector connector)
     {
         _connector = connector;
+        InitializeLines();
+    }
+
+    /// <summary>
+    /// Initialisiert Leitungen beim Start. Im Headless-Modus (kein SwyxIt!-GUI)
+    /// gibt DispNumberOfLines oft 0 zurück. DispSetNumberOfLines konfiguriert
+    /// die Anzahl der verfügbaren Leitungen.
+    /// </summary>
+    private void InitializeLines()
+    {
+        try
+        {
+            var com = _connector.GetCom();
+            if (com == null) return;
+
+            int current = 0;
+            try { current = (int)com.DispNumberOfLines; } catch { }
+
+            if (current == 0)
+            {
+                Logging.Info("LineManager: DispNumberOfLines=0, initialisiere mit DispSetNumberOfLines(2)...");
+                try
+                {
+                    com.DispSetNumberOfLines(2);
+                    int afterSet = (int)com.DispNumberOfLines;
+                    Logging.Info($"LineManager: Nach DispSetNumberOfLines → {afterSet} Leitungen.");
+                }
+                catch (Exception ex)
+                {
+                    Logging.Warn($"LineManager: DispSetNumberOfLines fehlgeschlagen: {ex.Message}");
+                }
+            }
+            else
+            {
+                Logging.Info($"LineManager: {current} Leitungen verfügbar.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: InitializeLines fehlgeschlagen: {ex.Message}");
+        }
     }
 
     private dynamic GetCom() =>
         _connector.GetCom() ?? throw new InvalidOperationException("COM nicht verbunden.");
 
-    private dynamic GetLine(int lineId) =>
-        GetCom().DispGetLine(lineId);
+    private dynamic GetLine(int lineId)
+    {
+        var com = GetCom();
+        try
+        {
+            var line = com.DispGetLine(lineId);
+            if (line != null) return line;
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: DispGetLine({lineId}) fehlgeschlagen: {ex.Message}");
+        }
+        // Fallback: DispSelectedLine
+        try
+        {
+            var sel = com.DispSelectedLine;
+            if (sel != null) return sel;
+        }
+        catch { }
+        throw new InvalidOperationException($"Leitung {lineId} nicht verfügbar.");
+    }
 
     // --- Anruf-Steuerung ---
 
@@ -88,22 +148,26 @@ public sealed class LineManager
     public void Hangup()
     {
         Logging.Info("LineManager: Hangup()");
+        // Versuch 1: DispSelectedLine.DispHookOn()
         try
         {
             var selectedLine = GetCom().DispSelectedLine;
             if (selectedLine != null)
             {
                 selectedLine.DispHookOn();
+                Logging.Info("LineManager: Hangup via DispSelectedLine.DispHookOn()");
+                return;
             }
-            else
-            {
-                // Fallback: Erste Leitung auflegen
-                var fallbackLine = GetCom().DispGetLine(0);
-                if (fallbackLine != null)
-                {
-                    fallbackLine.DispHookOn();
-                }
-            }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: DispSelectedLine.DispHookOn() fehlgeschlagen: {ex.Message}");
+        }
+        // Versuch 2: GetCom().DispHookOn() direkt
+        try
+        {
+            GetCom().DispHookOn();
+            Logging.Info("LineManager: Hangup via GetCom().DispHookOn()");
         }
         catch (Exception ex)
         {
@@ -145,72 +209,184 @@ public sealed class LineManager
 
     public int GetLineCount()
     {
-        return (int)GetCom().DispGetNumberOfLines();
+        try { return (int)GetCom().DispNumberOfLines; }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: DispNumberOfLines fehlgeschlagen: {ex.Message}");
+            return 1;
+        }
     }
 
     public int GetSelectedLineId()
     {
-        var line = GetCom().DispSelectedLine;
-        return line != null ? (int)line.DispLineId : -1;
+        try { return (int)GetCom().DispSelectedLineNumber; }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: DispSelectedLineNumber fehlgeschlagen: {ex.Message}");
+            return 0;
+        }
     }
 
     public int GetLineState(int lineId)
     {
-        return (int)GetLine(lineId).DispState;
+        try { return (int)GetLine(lineId).DispState; }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: GetLineState({lineId}) fehlgeschlagen: {ex.Message}");
+            return 0; // Inactive
+        }
     }
+
+    /// <summary>
+    /// Mappt den COM DispState-Integer auf den TypeScript LineState-Enum-String.
+    /// </summary>
+    private static string MapLineState(int stateInt) => stateInt switch
+    {
+        0  => "Inactive",
+        1  => "HookOffInternal",
+        2  => "HookOffExternal",
+        3  => "Ringing",
+        4  => "Dialing",
+        5  => "Alerting",
+        6  => "Knocking",
+        7  => "Busy",
+        8  => "Active",
+        9  => "OnHold",
+        10 => "ConferenceActive",
+        11 => "ConferenceOnHold",
+        12 => "Terminated",
+        13 => "Transferring",
+        14 => "Disabled",
+        15 => "DirectCall",
+        _  => "Inactive"
+    };
 
     public object GetAllLines()
     {
         int count = GetLineCount();
         var lines = new List<object>();
-        int selectedId = -1;
-        try { selectedId = GetSelectedLineId(); } catch { }
+        int selectedId = GetSelectedLineId();
 
-        for (int i = 0; i < count; i++)
+        // Headless-Fallback: Wenn DispNumberOfLines noch 0, nochmal initialisieren
+        if (count == 0)
         {
             try
             {
-                var line = GetLine(i);
-                int state = (int)line.DispState;
-                string callerName = "";
-                string callerNumber = "";
+                GetCom().DispSetNumberOfLines(2);
+                count = GetLineCount();
+                Logging.Info($"LineManager: Re-init → {count} Leitungen.");
+            }
+            catch { }
+        }
 
-                try
+        // Normaler Pfad: alle Leitungen per Index abfragen
+        for (int i = 0; i < count; i++)
+        {
+            lines.Add(ReadLine(i, i == selectedId));
+        }
+
+        // Letzter Fallback: wenn count immer noch 0, DispSelectedLine direkt
+        if (lines.Count == 0)
+        {
+            try
+            {
+                var sel = GetCom().DispSelectedLine;
+                if (sel != null)
                 {
-                    callerName   = (string)(line.DispCallerName   ?? "");
-                    callerNumber = (string)(line.DispCallerNumber ?? "");
+                    int stateInt = 0;
+                    string callerName = "", callerNumber = "";
+                    try { stateInt = (int)sel.DispState; } catch { }
+                    try { callerName = (string)(sel.DispCallerName ?? ""); } catch { }
+                    if (string.IsNullOrEmpty(callerName))
+                        try { callerName = (string)(sel.DispPeerName ?? ""); } catch { }
+                    try { callerNumber = (string)(sel.DispCallerNumber ?? ""); } catch { }
+                    if (string.IsNullOrEmpty(callerNumber))
+                        try { callerNumber = (string)(sel.DispPeerNumber ?? ""); } catch { }
+
+                    lines.Add(new
+                    {
+                        id = Math.Max(selectedId, 0),
+                        state = MapLineState(stateInt),
+                        callerName,
+                        callerNumber,
+                        isSelected = true
+                    });
+                    Logging.Info($"LineManager: Fallback DispSelectedLine → state={MapLineState(stateInt)}");
                 }
-                catch { /* nicht alle Properties sind in jedem State verfügbar */ }
-
-                lines.Add(new
-                {
-                    id = i,
-                    state,
-                    callerName,
-                    callerNumber,
-                    isSelected = (i == selectedId)
-                });
             }
             catch (Exception ex)
             {
-                Logging.Warn($"LineManager: Fehler bei Line {i}: {ex.Message}");
-                lines.Add(new { id = i, state = 0, callerName = "", callerNumber = "", isSelected = false });
+                Logging.Warn($"LineManager: DispSelectedLine Fallback fehlgeschlagen: {ex.Message}");
             }
         }
 
+        Logging.Info($"LineManager: GetAllLines → {lines.Count} Leitungen, selected={selectedId}");
         return new { lines };
+    }
+
+    /// <summary>
+    /// Liest eine einzelne Leitung per Index. Fängt Fehler ab und gibt Inactive zurück.
+    /// </summary>
+    private object ReadLine(int lineId, bool isSelected)
+    {
+        try
+        {
+            var line = GetLine(lineId);
+            int stateInt = 0;
+            string callerName = "";
+            string callerNumber = "";
+
+            try { stateInt = (int)line.DispState; } catch { }
+            try { callerName = (string)(line.DispCallerName ?? ""); } catch { }
+            if (string.IsNullOrEmpty(callerName))
+                try { callerName = (string)(line.DispPeerName ?? ""); } catch { }
+            try { callerNumber = (string)(line.DispCallerNumber ?? ""); } catch { }
+            if (string.IsNullOrEmpty(callerNumber))
+                try { callerNumber = (string)(line.DispPeerNumber ?? ""); } catch { }
+
+            return new
+            {
+                id = lineId,
+                state = MapLineState(stateInt),
+                callerName,
+                callerNumber,
+                isSelected
+            };
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: Line {lineId} fehlgeschlagen: {ex.Message}");
+            return new { id = lineId, state = "Inactive", callerName = "", callerNumber = "", isSelected = false };
+        }
     }
 
     public object GetLineDetails(int lineId)
     {
-        var line = GetLine(lineId);
+        string callerName   = "";
+        string callerNumber = "";
+        int stateInt = 0;
+        try
+        {
+            var line = GetLine(lineId);
+            try { stateInt = (int)line.DispState; } catch { }
+            try { callerName = (string)(line.DispCallerName ?? ""); } catch { }
+            if (string.IsNullOrEmpty(callerName))
+                try { callerName = (string)(line.DispPeerName ?? ""); } catch { }
+            try { callerNumber = (string)(line.DispCallerNumber ?? ""); } catch { }
+            if (string.IsNullOrEmpty(callerNumber))
+                try { callerNumber = (string)(line.DispPeerNumber ?? ""); } catch { }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: GetLineDetails({lineId}) fehlgeschlagen: {ex.Message}");
+        }
         return new
         {
-            id         = lineId,
-            state      = (int)line.DispState,
-            callerName = (string)(line.DispCallerName   ?? ""),
-            callerNumber = (string)(line.DispCallerNumber ?? ""),
-            isSelected = (lineId == GetSelectedLineId())
+            id           = lineId,
+            state        = MapLineState(stateInt),
+            callerName,
+            callerNumber,
+            isSelected   = true
         };
     }
 
