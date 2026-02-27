@@ -10,6 +10,8 @@ bridge/SwyxSpike/bin/
 bridge/SwyxSpike/obj/
 bridge/SwyxBridge/bin/
 bridge/SwyxBridge/obj/
+bridge/SwyxStandalone/bin/
+bridge/SwyxStandalone/obj/
 
 # IDE
 .vscode/
