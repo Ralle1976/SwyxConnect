@@ -18,6 +18,8 @@ export const IPC_CHANNELS = {
   GET_HISTORY: 'swyx:getHistory',
   GET_VOICEMAILS: 'swyx:getVoicemails',
   GET_PRESENCE: 'swyx:getPresence',
+  SET_PRESENCE: 'swyx:setPresence',
+  GET_COLLEAGUE_PRESENCE: 'swyx:getColleaguePresence',
   GET_BRIDGE_STATE: 'swyx:getBridgeState',
   GET_SETTINGS: 'swyx:getSettings',
   SET_SETTINGS: 'swyx:setSettings',

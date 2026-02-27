@@ -19,7 +19,7 @@ export function usePresence(): PresenceHookResult {
     async (status: PresenceStatus) => {
       setOwnStatus(status);
       try {
-        await window.swyxApi.dial(`presence:${status}`);
+        await window.swyxApi.setPresence(status);
       } catch {
         // bridge presence update — non-critical
       }

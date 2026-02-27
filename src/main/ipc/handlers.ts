@@ -9,6 +9,7 @@ import {
   ColleaguePresence,
   CallDetails,
   AppSettings,
+  PresenceStatus,
 } from '../../shared/types';
 import { BridgeManager } from '../bridge/BridgeManager';
 import { SettingsStore } from '../services/SettingsStore';
@@ -67,6 +68,14 @@ export function registerIpcHandlers(
     return bridgeManager.sendRequest(
       'getColleaguePresence'
     ) as Promise<ColleaguePresence[]>;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SET_PRESENCE, async (_event, status: PresenceStatus) => {
+    return bridgeManager.sendRequest('setPresence', { status });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_COLLEAGUE_PRESENCE, async () => {
+    return bridgeManager.sendRequest('getColleaguePresence');
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_BRIDGE_STATE, () => {

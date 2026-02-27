@@ -9,6 +9,7 @@ import type {
   VoicemailEntry,
   ColleaguePresence,
   AppSettings,
+  PresenceStatus,
 } from '../shared/types'
 
 // ─── Exposed API ──────────────────────────────────────────────────────────────
@@ -55,6 +56,11 @@ const swyxApi = {
   getPresence: (): Promise<ColleaguePresence[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_PRESENCE),
 
+  setPresence: (status: PresenceStatus): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_PRESENCE, status),
+
+  getColleaguePresence: (): Promise<ColleaguePresence[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_COLLEAGUE_PRESENCE),
   getBridgeState: (): Promise<BridgeState> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_BRIDGE_STATE),
 

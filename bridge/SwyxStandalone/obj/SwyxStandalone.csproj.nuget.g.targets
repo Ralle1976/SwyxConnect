@@ -1,0 +1,7 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)system.text.json/8.0.6/buildTransitive/net6.0/System.Text.Json.targets" Condition="Exists('$(NuGetPackageRoot)system.text.json/8.0.6/buildTransitive/net6.0/System.Text.Json.targets')" />
+    <Import Project="$(NuGetPackageRoot)swyx.client.clmgrapi/14.21.0/build/Swyx.Client.ClmgrAPI.targets" Condition="Exists('$(NuGetPackageRoot)swyx.client.clmgrapi/14.21.0/build/Swyx.Client.ClmgrAPI.targets')" />
+  </ImportGroup>
+</Project>

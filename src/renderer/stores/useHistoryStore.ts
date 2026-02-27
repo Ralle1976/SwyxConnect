@@ -7,6 +7,7 @@ interface HistoryStoreState {
   loading: boolean;
   addEntry: (entry: CallHistoryEntry) => void;
   clearHistory: () => void;
+  fetchHistory: () => Promise<void>;
 }
 
 export const useHistoryStore = create<HistoryStoreState>()(
@@ -23,6 +24,20 @@ export const useHistoryStore = create<HistoryStoreState>()(
         }),
 
       clearHistory: () => set({ entries: [] }),
+
+      fetchHistory: async () => {
+        set({ loading: true });
+        try {
+          const data = await window.swyxApi.getHistory();
+          if (Array.isArray(data) && data.length > 0) {
+            set({ entries: data });
+          }
+        } catch {
+          // Bridge not available or no history — keep existing entries
+        } finally {
+          set({ loading: false });
+        }
+      },
     }),
     {
       name: 'swyxit-history-storage',

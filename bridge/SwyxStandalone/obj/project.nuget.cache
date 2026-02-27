@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "lTNcxk5rkG0=",
+  "success": true,
+  "projectFilePath": "/mnt/c/Users/tango/Desktop/SwyIt-byRalle1976/bridge/SwyxStandalone/SwyxStandalone.csproj",
+  "expectedPackageFiles": [
+    "/home/tango/.nuget/packages/swyx.client.clmgrapi/14.21.0/swyx.client.clmgrapi.14.21.0.nupkg.sha512",
+    "/home/tango/.nuget/packages/system.text.json/8.0.6/system.text.json.8.0.6.nupkg.sha512",
+    "/home/tango/.nuget/packages/microsoft.windowsdesktop.app.ref/8.0.24/microsoft.windowsdesktop.app.ref.8.0.24.nupkg.sha512"
+  ],
+  "logs": []
+}
