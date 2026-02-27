@@ -35,3 +35,10 @@ npm-debug.log*
 
 # Test coverage
 coverage/
+
+# Build artifacts
+resources/bridge/
+*.tsbuildinfo
+
+# COM debug dumps
+*_members.txt

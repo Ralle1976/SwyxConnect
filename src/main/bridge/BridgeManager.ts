@@ -47,8 +47,8 @@ export class BridgeManager extends EventEmitter {
   private get bridgePath(): string {
     const resourcesPath = app.isPackaged
       ? process.resourcesPath
-      : path.join(app.getAppPath(), 'resources');
-    return path.join(resourcesPath, 'bridge', 'SwyxBridge.exe');
+      : path.join(app.getAppPath(), 'out', 'bridge');
+    return path.join(resourcesPath, 'SwyxBridge.exe');
   }
 
   start(): void {

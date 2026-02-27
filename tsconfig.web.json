@@ -12,17 +12,30 @@
     "noEmit": true,
     "composite": true,
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/renderer/*"],
-      "@shared/*": ["src/shared/*"]
+      "@/*": [
+        "src/renderer/*"
+      ],
+      "@shared/*": [
+        "src/shared/*"
+      ]
     }
   },
   "include": [
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
-    "src/shared/**/*.ts"
+    "src/shared/**/*.ts",
+    "src/preload/**/*.ts"
   ],
-  "exclude": ["node_modules", "out", "bridge"]
+  "exclude": [
+    "node_modules",
+    "out",
+    "bridge"
+  ]
 }

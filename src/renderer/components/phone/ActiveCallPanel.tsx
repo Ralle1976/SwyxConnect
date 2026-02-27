@@ -63,6 +63,7 @@ export function ActiveCallPanel() {
 
   const activeLine = lines.find((l) => l.id === selectedLineId)
   const isRinging = activeLine?.state === 'Ringing'
+  const isDialing = activeLine?.state === 'Dialing' || activeLine?.state === 'Alerting'
   const isVisible =
     activeLine &&
     activeLine.state !== 'Inactive' &&
@@ -75,12 +76,12 @@ export function ActiveCallPanel() {
     setIsOnHold(false)
   }, [selectedLineId])
 
-  // Count up timer when call is active (not ringing)
+  // Count up timer when call is active (not ringing or dialing)
   useEffect(() => {
-    if (!isVisible || isRinging) return
+    if (!isVisible || isRinging || isDialing) return
     const timer = setInterval(() => setElapsed((s) => s + 1), 1000)
     return () => clearInterval(timer)
-  }, [isVisible, isRinging])
+  }, [isVisible, isRinging, isDialing])
 
   const handleHoldToggle = useCallback(() => {
     if (!activeLine) return
@@ -135,7 +136,7 @@ export function ActiveCallPanel() {
           </p>
         )}
         <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 font-mono tabular-nums">
-          {isRinging ? 'Eingehend…' : formatDuration(elapsed)}
+          {isRinging ? 'Eingehend…' : isDialing ? 'Wird angerufen…' : formatDuration(elapsed)}
         </p>
       </div>
 

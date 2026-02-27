@@ -72,7 +72,7 @@ export default function PresenceView() {
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
             <EmptyState
-              icon={Users}
+              icon={<Users size={32} />}
               title="Keine Kollegen gefunden"
               description={
                 search

@@ -24,15 +24,15 @@ export function TitleBar() {
   const label = connectionLabel[state] ?? 'Unbekannt'
 
   const handleMinimize = () => {
-    window.electron?.ipcRenderer?.send('window:minimize')
+    window.windowControls?.minimize()
   }
 
   const handleMaximize = () => {
-    window.electron?.ipcRenderer?.send('window:maximize')
+    window.windowControls?.maximize()
   }
 
   const handleClose = () => {
-    window.electron?.ipcRenderer?.send('window:close')
+    window.windowControls?.close()
   }
 
   return (

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, KeyboardEvent } from 'react'
-import { Phone } from 'lucide-react'
+import { Phone, Delete } from 'lucide-react'
 import { useCall } from '../../hooks/useCall'
 
 const DIALPAD_KEYS = [
@@ -56,19 +56,32 @@ export function Dialpad() {
     }
   }, [])
 
+  const handleDelete = useCallback(() => {
+    setNumber((prev) => prev.slice(0, -1))
+  }, [])
+
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-xs mx-auto">
       {/* Number input */}
-      <div className="relative w-full">
+      <div className="relative w-full flex items-center">
         <input
           type="tel"
           value={number}
           onChange={(e) => setNumber(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Nummer eingeben…"
-          className="w-full px-4 py-3 text-center text-xl font-mono tracking-widest rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
+          className="w-full pl-4 pr-12 py-3 text-center text-xl font-mono tracking-widest rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
           autoFocus
         />
+        {number && (
+          <button
+            onClick={handleDelete}
+            className="absolute right-3 p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+            title="Löschen"
+          >
+            <Delete size={20} />
+          </button>
+        )}
       </div>
 
       {/* Dialpad grid */}

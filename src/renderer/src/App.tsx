@@ -8,6 +8,7 @@ import { useBridge } from '../hooks/useBridge'
 import { useLineStore, getRingingLines } from '../stores/useLineStore'
 import { useSettingsStore, applyTheme } from '../stores/useSettingsStore'
 import { usePresenceStore } from '../stores/usePresenceStore'
+import { useCallHistoryTracker } from '../stores/useCallHistoryTracker'
 import { LineState } from '../types/swyx'
 import PhoneView from '../components/phone/PhoneView'
 import ContactsView from '../components/contacts/ContactsView'
@@ -25,6 +26,9 @@ export function App() {
   const updateLine = useLineStore((s) => s.updateLine)
   const setColleagues = usePresenceStore((s) => s.setColleagues)
   const theme = useSettingsStore((s) => s.theme)
+
+  // Initialize call history tracking
+  useCallHistoryTracker()
 
   useEffect(() => { applyTheme(theme) }, [theme])
 

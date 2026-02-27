@@ -5,35 +5,30 @@ namespace SwyxBridge.Com;
 
 /// <summary>
 /// Event-Sink für CLMgr PubOnLineMgrNotification Events.
-/// CRITICAL: Instanz MUSS in einem static Feld gehalten werden,
-/// damit der GC sie nicht einsammelt während COM eine Referenz hält.
+/// Schickt bei Leitungsänderungen sofort die aktuellen Leitungsdaten mit (lineStateChanged).
+/// CRITICAL: Instanz MUSS in einem static Feld gehalten werden.
 /// </summary>
 public sealed class EventSink
 {
-    // CRITICAL: Static reference — GC darf dieses Objekt NICHT einsammeln!
     private static EventSink? _staticInstance;
     private static Action<int, int>? _staticDelegate;
 
     private readonly SwyxConnector _connector;
+    private readonly LineManager _lineManager;
 
-    private EventSink(SwyxConnector connector)
+    private EventSink(SwyxConnector connector, LineManager lineManager)
     {
         _connector = connector;
+        _lineManager = lineManager;
     }
 
-    /// <summary>
-    /// Erstellt und registriert einen neuen Event-Sink.
-    /// MUSS auf dem STA-Thread aufgerufen werden.
-    /// MUSS nach jedem Reconnect NEU erstellt werden (nie wiederverwenden).
-    /// </summary>
-    public static EventSink Subscribe(SwyxConnector connector)
+    public static EventSink Subscribe(SwyxConnector connector, LineManager lineManager)
     {
-        // Alten Sink trennen falls vorhanden
         Unsubscribe();
 
-        var sink = new EventSink(connector);
-        _staticInstance = sink; // GC-Schutz
-        _staticDelegate = sink.OnLineMgrNotification; // GC-Schutz für Delegate
+        var sink = new EventSink(connector, lineManager);
+        _staticInstance = sink;
+        _staticDelegate = sink.OnLineMgrNotification;
 
         var com = connector.GetCom();
         if (com == null)
@@ -49,16 +44,12 @@ public sealed class EventSink
             _staticInstance = null;
             _staticDelegate = null;
             throw new InvalidOperationException(
-                $"Event-Registrierung fehlgeschlagen: {ex.Message}. " +
-                "Möglicherweise funktionieren .NET 8 COM Events nicht — Fallback auf .NET Fx 4.8.", ex);
+                $"Event-Registrierung fehlgeschlagen: {ex.Message}.", ex);
         }
 
         return sink;
     }
 
-    /// <summary>
-    /// Trennt den Event-Sink. Sicher aufrufbar, auch wenn nicht verbunden.
-    /// </summary>
     public static void Unsubscribe()
     {
         if (_staticInstance == null || _staticDelegate == null) return;
@@ -67,9 +58,7 @@ public sealed class EventSink
         {
             var com = _staticInstance._connector.GetCom();
             if (com != null)
-            {
                 ((dynamic)com).PubOnLineMgrNotification -= _staticDelegate;
-            }
             Logging.Info("EventSink: Abgemeldet.");
         }
         catch (Exception ex)
@@ -83,26 +72,48 @@ public sealed class EventSink
         }
     }
 
-    /// <summary>
-    /// Event-Handler — wird vom COM STA-Thread aufgerufen.
-    /// Emitted JSON-RPC Events an stdout.
-    /// </summary>
     private void OnLineMgrNotification(int msg, int param)
     {
+        // msg 0-3: Leitungsstatus-Änderungen → Leitungsdaten sofort abfragen und mitsenden
+        if (msg is 0 or 1 or 2 or 3)
+        {
+            try
+            {
+                var linesResult = _lineManager.GetAllLines();
+                JsonRpcEmitter.EmitEvent("lineStateChanged", linesResult);
+                Logging.Info($"EventSink: lineStateChanged (msg={msg}, param={param})");
+            }
+            catch (Exception ex)
+            {
+                Logging.Warn($"EventSink: GetAllLines fehlgeschlagen: {ex.Message}");
+                JsonRpcEmitter.EmitEvent("lineStateChanged", new { lines = Array.Empty<object>() });
+            }
+            return;
+        }
+
+        // msg 9: Voicemail-Benachrichtigung
+        if (msg == 9)
+        {
+            JsonRpcEmitter.EmitEvent("voicemailNotification", new { msg, param });
+            return;
+        }
+
+        // msg 10: Presence-Änderung
+        if (msg == 10)
+        {
+            JsonRpcEmitter.EmitEvent("presenceNotification", new { msg, param });
+            return;
+        }
+
+        // Alle anderen Events
         string eventName = msg switch
         {
-            0 => "lineStateChanged",
-            1 => "lineSelectionChanged",
-            2 => "lineDetailsChanged",
-            3 => "lineDetailsChangedEx",
-            4 => "configChanged",
-            5 => "speedDialNotification",
-            6 => "groupNotification",
-            7 => "chatMessage",
-            8 => "callbackNotification",
-            9 => "voicemailNotification",
-            10 => "presenceNotification",
-            _ => $"unknown_{msg}"
+            4  => "configChanged",
+            5  => "speedDialNotification",
+            6  => "groupNotification",
+            7  => "chatMessage",
+            8  => "callbackNotification",
+            _  => $"unknown_{msg}"
         };
 
         JsonRpcEmitter.EmitEvent(eventName, new { msg, param });

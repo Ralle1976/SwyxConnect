@@ -70,8 +70,17 @@ public sealed class CallHandler
 
     private object? HandleHangup(JsonElement? p)
     {
-        int lineId = GetInt(p, "lineId");
-        _lm.HookOn(lineId);
+        int? lineId = null;
+        try { lineId = GetInt(p, "lineId"); } catch { }
+
+        if (lineId.HasValue && lineId.Value >= 0)
+        {
+            _lm.HookOn(lineId.Value);
+        }
+        else
+        {
+            _lm.Hangup();
+        }
         return new { ok = true };
     }
 

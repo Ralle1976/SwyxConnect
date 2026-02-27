@@ -101,6 +101,15 @@ const swyxApi = {
 
 contextBridge.exposeInMainWorld('swyxApi', swyxApi)
 
+const windowControls = {
+  minimize: (): void => ipcRenderer.send('window:minimize'),
+  maximize: (): void => ipcRenderer.send('window:maximize'),
+  close: (): void => ipcRenderer.send('window:close'),
+}
+
+contextBridge.exposeInMainWorld('windowControls', windowControls)
+
 // ─── Type Declaration ─────────────────────────────────────────────────────────
 
 export type SwyxApi = typeof swyxApi
+export type WindowControls = typeof windowControls

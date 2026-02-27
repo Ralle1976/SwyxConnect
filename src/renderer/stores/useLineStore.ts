@@ -12,16 +12,9 @@ interface LineStoreState {
   clearActiveCall: () => void;
 }
 
-const MOCK_LINES: LineInfo[] = [
-  { id: 1, state: LineState.Inactive, isSelected: true },
-  { id: 2, state: LineState.Inactive, isSelected: false },
-  { id: 3, state: LineState.Inactive, isSelected: false },
-  { id: 4, state: LineState.Inactive, isSelected: false },
-];
-
 export const useLineStore = create<LineStoreState>((set) => ({
-  lines: MOCK_LINES,
-  selectedLineId: 1,
+  lines: [],
+  selectedLineId: null,
   activeCall: null,
 
   setLines: (lines) => set({ lines }),

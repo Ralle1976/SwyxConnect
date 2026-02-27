@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SwyxBridge.Utils;
 
 namespace SwyxBridge.Com;
@@ -9,6 +10,13 @@ namespace SwyxBridge.Com;
 public sealed class LineManager
 {
     private readonly SwyxConnector _connector;
+
+    // Win32 API zum Unterdrücken des SwyxIt!-Fensters
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    private const int SW_MINIMIZE = 6;
 
     public LineManager(SwyxConnector connector)
     {
@@ -26,7 +34,57 @@ public sealed class LineManager
     public void Dial(string number)
     {
         Logging.Info($"LineManager: Dial({number})");
-        GetCom().DispSimpleDial(number);
+        
+        try 
+        {
+            var selectedLine = GetCom().DispSelectedLine;
+            if (selectedLine != null)
+            {
+                selectedLine.DispDial(number);
+            }
+            else
+            {
+                var fallbackLine = GetCom().DispGetLine(0);
+                if (fallbackLine != null)
+                {
+                    fallbackLine.DispDial(number);
+                }
+                else
+                {
+                    Logging.Warn("LineManager: Keine Leitung zum Wählen gefunden.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: Fehler beim Wählen: {ex.Message}");
+        }
+    }
+
+    public void Hangup()
+    {
+        Logging.Info("LineManager: Hangup()");
+        try
+        {
+            var selectedLine = GetCom().DispSelectedLine;
+            if (selectedLine != null)
+            {
+                selectedLine.DispHookOn();
+            }
+            else
+            {
+                // Fallback: Erste Leitung auflegen
+                var fallbackLine = GetCom().DispGetLine(0);
+                if (fallbackLine != null)
+                {
+                    fallbackLine.DispHookOn();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"LineManager: Fehler beim Auflegen: {ex.Message}");
+        }
     }
 
     public void HookOff(int lineId)
@@ -56,7 +114,6 @@ public sealed class LineManager
     public void Transfer(int lineId, string targetNumber)
     {
         Logging.Info($"LineManager: Transfer(line={lineId}, target={targetNumber})");
-        // Blind Transfer: DispForwardCall leitet den Anruf weiter
         GetLine(lineId).DispForwardCall(targetNumber);
     }
 
@@ -78,13 +135,12 @@ public sealed class LineManager
         return (int)GetLine(lineId).DispState;
     }
 
-    /// <summary>
-    /// Gibt Details aller Leitungen als serialisierbares Objekt zurück.
-    /// </summary>
     public object GetAllLines()
     {
         int count = GetLineCount();
         var lines = new List<object>();
+        int selectedId = -1;
+        try { selectedId = GetSelectedLineId(); } catch { }
 
         for (int i = 0; i < count; i++)
         {
@@ -97,13 +153,10 @@ public sealed class LineManager
 
                 try
                 {
-                    callerName = (string)(line.DispCallerName ?? "");
+                    callerName   = (string)(line.DispCallerName   ?? "");
                     callerNumber = (string)(line.DispCallerNumber ?? "");
                 }
-                catch
-                {
-                    // Nicht alle Properties sind in jedem Zustand verfügbar
-                }
+                catch { /* nicht alle Properties sind in jedem State verfügbar */ }
 
                 lines.Add(new
                 {
@@ -111,7 +164,7 @@ public sealed class LineManager
                     state,
                     callerName,
                     callerNumber,
-                    isSelected = (i == GetSelectedLineId())
+                    isSelected = (i == selectedId)
                 });
             }
             catch (Exception ex)
@@ -129,9 +182,9 @@ public sealed class LineManager
         var line = GetLine(lineId);
         return new
         {
-            id = lineId,
-            state = (int)line.DispState,
-            callerName = (string)(line.DispCallerName ?? ""),
+            id         = lineId,
+            state      = (int)line.DispState,
+            callerName = (string)(line.DispCallerName   ?? ""),
             callerNumber = (string)(line.DispCallerNumber ?? ""),
             isSelected = (lineId == GetSelectedLineId())
         };

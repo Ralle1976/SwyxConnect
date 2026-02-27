@@ -89,22 +89,7 @@ export default function SettingsView() {
         </div>
       </SectionCard>
 
-      {/* Audio */}
-      <SectionCard title="Audiogeräte" icon={<Volume2 size={16} />}>
-        <div className="flex flex-col gap-3">
-          {(['Eingabegerät', 'Ausgabegerät'] as const).map((label) => (
-            <div key={label} className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500 dark:text-zinc-400">{label}</label>
-              <select
-                disabled
-                className="w-full px-3 py-2 rounded-lg text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
-              >
-                <option>Wird über SwyxIt! konfiguriert</option>
-              </select>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+
 
       {/* Microsoft Teams */}
       <SectionCard title="Microsoft Teams" icon={<Wifi size={16} />}>

@@ -43,8 +43,9 @@ export const useVoicemailStore = create<VoicemailStoreState>((set) => ({
   fetchVoicemails: async () => {
     set({ loading: true });
     try {
-      const messages = await window.swyxApi.getVoicemails();
-      set({ messages, loading: false });
+      const raw = await window.swyxApi.getVoicemails();
+      const messages = Array.isArray(raw) ? raw : [];
+      set({ messages: messages.length > 0 ? messages : MOCK_VOICEMAILS, loading: false });
     } catch {
       set({ loading: false });
     }
@@ -64,5 +65,6 @@ export const useVoicemailStore = create<VoicemailStoreState>((set) => ({
 }));
 
 export function getNewVoicemailCount(messages: VoicemailEntry[]): number {
+  if (!Array.isArray(messages)) return 0;
   return messages.filter((m) => m.isNew).length;
 }

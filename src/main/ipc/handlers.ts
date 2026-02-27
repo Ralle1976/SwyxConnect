@@ -99,6 +99,14 @@ export function registerIpcHandlers(
     return bridgeManager.sendRequest('unmute', { lineId });
   });
 
+  // ─── Window Controls ──────────────────────────────────────────────────────────
+  ipcMain.on('window:minimize', () => { getMainWindow()?.minimize(); });
+  ipcMain.on('window:maximize', () => {
+    const win = getMainWindow();
+    if (win) win.isMaximized() ? win.unmaximize() : win.maximize();
+  });
+  ipcMain.on('window:close', () => { getMainWindow()?.close(); });
+
   bridgeManager.on('stateChanged', (state: BridgeState) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.BRIDGE_STATE_CHANGED, state);
   });
@@ -108,6 +116,15 @@ export function registerIpcHandlers(
     if (!win) return;
 
     switch (evt.method) {
+      case 'bridgeState': {
+        // Map COM-level state string to BridgeState enum
+        const comState = (evt.params as { state: string }).state;
+        const mappedState: BridgeState =
+          comState === 'connected' ? BridgeState.Connected : BridgeState.Disconnected;
+        win.webContents.send(IPC_CHANNELS.BRIDGE_STATE_CHANGED, mappedState);
+        break;
+      }
+
       case 'lineStateChanged':
         win.webContents.send(
           IPC_CHANNELS.LINE_STATE_CHANGED,

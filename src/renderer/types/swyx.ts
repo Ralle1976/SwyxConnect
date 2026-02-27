@@ -21,10 +21,11 @@ export type {
   WindowBounds,
 } from '../../shared/types';
 
-import type { SwyxApi } from '../../preload/index';
+import type { SwyxApi, WindowControls } from '../../preload/index';
 
 declare global {
   interface Window {
     swyxApi: SwyxApi;
+    windowControls: WindowControls;
   }
 }

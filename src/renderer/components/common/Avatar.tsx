@@ -1,9 +1,11 @@
 import React from 'react';
+import type { PresenceStatus } from '../../types/swyx';
 
 interface AvatarProps {
   name: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
+  presence?: PresenceStatus;
 }
 
 const sizeMap = {
@@ -42,17 +44,32 @@ function getColorIndex(name: string): number {
   return sum % colorPalette.length;
 }
 
-export function Avatar({ name, size = 'md', className = '' }: AvatarProps) {
+const presenceDot: Record<string, string> = {
+  Available: 'bg-emerald-500',
+  Away: 'bg-amber-400',
+  Busy: 'bg-red-500',
+  DND: 'bg-red-700',
+  Offline: 'bg-zinc-400',
+};
+
+export function Avatar({ name, size = 'md', className = '', presence }: AvatarProps) {
   const initials = getInitials(name);
   const colorClass = colorPalette[getColorIndex(name)];
   const sizeClass = sizeMap[size];
 
   return (
-    <div
-      className={`${sizeClass} ${colorClass} rounded-full flex items-center justify-center font-semibold text-white select-none ${className}`}
-      title={name}
-    >
-      {initials}
+    <div className="relative inline-flex flex-shrink-0">
+      <div
+        className={`${sizeClass} ${colorClass} rounded-full flex items-center justify-center font-semibold text-white select-none ${className}`}
+        title={name}
+      >
+        {initials}
+      </div>
+      {presence && (
+        <span
+          className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900 ${presenceDot[presence] ?? 'bg-zinc-400'}`}
+        />
+      )}
     </div>
   );
 }

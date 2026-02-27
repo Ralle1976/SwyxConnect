@@ -6,7 +6,7 @@ using SwyxBridge.Utils;
 namespace SwyxBridge.Handlers;
 
 /// <summary>
-/// Behandelt Kontakt-bezogene JSON-RPC Methoden.
+/// Kontaktsuche via CLMgr COM Phonebook-Interface.
 /// </summary>
 public sealed class ContactHandler
 {
@@ -30,12 +30,12 @@ public sealed class ContactHandler
             object? result = req.Method switch
             {
                 "searchContacts" => SearchContacts(req.Params),
-                "getPhonebook" => GetPhonebook(),
-                _ => null
+                "getPhonebook"   => GetPhonebook(),
+                _                => null
             };
 
             if (req.Id.HasValue)
-                JsonRpcEmitter.EmitResponse(req.Id.Value, result ?? new { contacts = Array.Empty<object>() });
+                JsonRpcEmitter.EmitResponse(req.Id.Value, result ?? Array.Empty<object>());
         }
         catch (Exception ex)
         {
@@ -51,15 +51,53 @@ public sealed class ContactHandler
         if (p?.ValueKind == JsonValueKind.Object && p.Value.TryGetProperty("query", out var val))
             query = val.GetString() ?? "";
 
-        // TODO: Implementierung über PbxPhoneBookEntryDisp + UserPhoneBookEntryDisp
-        Logging.Info($"ContactHandler: searchContacts(query={query}) (Stub)");
-        return new { query, contacts = Array.Empty<object>() };
+        var com = _connector.GetCom();
+        if (com == null) return Array.Empty<object>();
+
+        try
+        {
+            // Versuche DispSearchPhoneBookEntries (Swyx-typische Methode)
+            var entries = com.DispSearchPhoneBookEntries(query);
+            if (entries == null) return Array.Empty<object>();
+
+            int count = (int)entries.Count;
+            Logging.Info($"ContactHandler: {count} Kontakte für '{query}' gefunden.");
+
+            var result = new List<object>();
+            for (int i = 1; i <= count; i++)
+            {
+                try
+                {
+                    var entry = entries.Item(i);
+                    if (entry == null) continue;
+
+                    result.Add(new
+                    {
+                        id         = SafeString(() => (string)(entry.DispEntryId    ?? i.ToString())),
+                        name       = SafeString(() => (string)(entry.DispDisplayName ?? "")),
+                        number     = SafeString(() => (string)(entry.DispPhoneNumber ?? "")),
+                        email      = SafeString(() => (string)(entry.DispEMail       ?? "")),
+                        department = SafeString(() => (string)(entry.DispDepartment  ?? "")),
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Logging.Warn($"ContactHandler: Eintrag {i} fehlgeschlagen: {ex.Message}");
+                }
+            }
+            return result.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"ContactHandler: COM-Suche fehlgeschlagen: {ex.Message}");
+            return Array.Empty<object>();
+        }
     }
 
     private object GetPhonebook()
     {
-        // TODO: Implementierung über COM Phonebook-Zugriff
-        Logging.Info("ContactHandler: getPhonebook (Stub)");
-        return new { entries = Array.Empty<object>() };
+        return SearchContacts(null); // Leere Suche = alle Einträge
     }
+
+    private static string SafeString(Func<string> f) { try { return f(); } catch { return ""; } }
 }

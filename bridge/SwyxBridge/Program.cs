@@ -98,19 +98,21 @@ static class Program
             _connector.Connect();
             Logging.Info("COM-Verbindung hergestellt.");
 
+            // Handler erstellen (LineManager muss vor EventSink bereit sein)
+            _lineManager = new LineManager(_connector);
+
             // Event-Sink registrieren
-            EventSink.Subscribe(_connector);
+            EventSink.Subscribe(_connector, _lineManager);
             Logging.Info("Event-Sink registriert.");
         }
         catch (Exception ex)
         {
             Logging.Error($"COM-Verbindung fehlgeschlagen: {ex.Message}");
             JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected", error = ex.Message });
-            // Bridge läuft trotzdem weiter für Heartbeat + Reconnect-Versuche
         }
 
-        // Handler erstellen
-        _lineManager = new LineManager(_connector);
+        // Restliche Handler erstellen (LineManager ggf. bereits gesetzt)
+        _lineManager ??= new LineManager(_connector);
         _callHandler = new CallHandler(_lineManager);
         _presenceHandler = new PresenceHandler(_connector);
         _contactHandler = new ContactHandler(_connector);

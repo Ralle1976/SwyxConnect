@@ -9,6 +9,7 @@ import { NotificationService } from './services/NotificationService'
 import { BridgeState, CallDetails, LineState } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
+let isQuitting = false
 const bridgeManager = new BridgeManager()
 const settingsStore = new SettingsStore()
 let trayIcon: TrayIcon | null = null
@@ -61,7 +62,7 @@ function createMainWindow(): BrowserWindow {
   })
 
   win.on('close', (event) => {
-    if (settingsStore.get('closeToTray') !== false && !app.isQuitting) {
+    if (settingsStore.get('closeToTray') !== false && !isQuitting) {
       event.preventDefault()
       win.hide()
     } else {
@@ -92,17 +93,15 @@ function createMainWindow(): BrowserWindow {
   return win
 }
 
-declare module 'electron' {
-  interface App {
-    isQuitting?: boolean
-  }
-}
-
 app.on('before-quit', () => {
-  app.isQuitting = true
+  isQuitting = true
   bridgeManager.stop()
   settingsStore.flush()
 })
+
+// Register IPC handlers early (before whenReady) so they are available
+// as soon as the renderer makes its first invoke calls.
+registerIpcHandlers(bridgeManager, settingsStore, getMainWindow)
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.ralle197.swyit')
@@ -115,8 +114,6 @@ app.whenReady().then(() => {
 
   trayIcon = new TrayIcon(mainWindow)
   trayIcon.init()
-
-  registerIpcHandlers(bridgeManager, settingsStore, getMainWindow)
 
   bridgeManager.on('stateChanged', (state: BridgeState) => {
     trayIcon?.setStatus(state)

@@ -3,25 +3,13 @@ import EmptyState from '../common/EmptyState';
 
 const CARDS: {
   title: string;
-  icon: React.ComponentType<{ size?: number }>;
   description: string;
+  icon: React.ReactNode;
 }[] = [
-  {
-    title: 'Warteschlangen',
-    icon: Headphones,
-    description: 'Warteschlangen-Übersicht wird in einem zukünftigen Update verfügbar.',
-  },
-  {
-    title: 'Agenten-Übersicht',
-    icon: Users,
-    description: 'Agenten-Status und -Verwaltung wird in einem zukünftigen Update verfügbar.',
-  },
-  {
-    title: 'Supervisor-Panel',
-    icon: Settings,
-    description: 'Supervisor-Funktionen werden in einem zukünftigen Update verfügbar.',
-  },
-];
+    { title: 'Warteschlangen', icon: <Headphones size={32} />, description: 'Warteschlangen-Übersicht wird in einem zukünftigen Update verfügbar.' },
+    { title: 'Agenten-Übersicht', icon: <Users size={32} />, description: 'Agenten-Status und -Verwaltung wird in einem zukünftigen Update verfügbar.' },
+    { title: 'Supervisor-Panel', icon: <Settings size={32} />, description: 'Supervisor-Funktionen werden in einem zukünftigen Update verfügbar.' },
+  ];
 
 export default function CallcenterDashboard() {
   return (

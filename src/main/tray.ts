@@ -21,8 +21,13 @@ export class TrayIcon {
   }
 
   init(): void {
-    const iconPath = this.getIconPath();
-    this.tray = new Tray(iconPath);
+    try {
+      const iconPath = this.getIconPath();
+      this.tray = new Tray(iconPath);
+    } catch {
+      // Fallback: empty 1x1 image so the rest of the app still boots
+      this.tray = new Tray(nativeImage.createEmpty());
+    }
     this.tray.setToolTip('Swyx Softphone');
     this.updateContextMenu();
 
@@ -110,8 +115,8 @@ export class TrayIcon {
       process.platform === 'darwin'
         ? 'iconTemplate.png'
         : process.platform === 'win32'
-        ? 'icon.ico'
-        : 'icon.png';
+          ? 'icon.ico'
+          : 'icon.png';
 
     const resourcesPath = app.isPackaged
       ? process.resourcesPath
