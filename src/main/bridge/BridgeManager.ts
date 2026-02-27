@@ -45,10 +45,13 @@ export class BridgeManager extends EventEmitter {
   private isShuttingDown = false;
 
   private get bridgePath(): string {
-    const resourcesPath = app.isPackaged
-      ? process.resourcesPath
-      : path.join(app.getAppPath(), 'out', 'bridge');
-    return path.join(resourcesPath, 'SwyxBridge.exe');
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'SwyxBridge.exe');
+    }
+    // Dev mode: app.getAppPath() = .../out/main, bridge is at .../out/bridge/
+    const appDir = app.getAppPath();
+    const outDir = path.dirname(appDir); // go from out/main → out/
+    return path.join(outDir, 'bridge', 'SwyxBridge.exe');
   }
 
   start(): void {
