@@ -1,0 +1,50 @@
+{
+  "name": "swyit-byralle197",
+  "version": "0.1.0",
+  "description": "Modern Swyx Softphone - Electron + React + COM Bridge",
+  "main": "./out/main/index.js",
+  "author": "Ralle197",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -b",
+    "postinstall": "electron-builder install-app-deps",
+    "build:bridge": "dotnet build bridge/SwyxBridge/SwyxBridge.csproj -c Release -o out/bridge",
+    "build:spike": "dotnet build bridge/SwyxSpike/SwyxSpike.csproj -c Release -o out/spike",
+    "build:win": "npm run build && electron-builder --win",
+    "lint": "eslint . --ext .ts,.tsx",
+    "typecheck:noref": "tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@azure/msal-node": "^2.16.0",
+    "zustand": "^5.0.3",
+    "immer": "^10.1.1",
+    "lucide-react": "^0.469.0"
+  },
+  "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^5.0.0",
+    "eslint": "^9.15.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  }
+}

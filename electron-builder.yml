@@ -1,0 +1,30 @@
+appId: com.ralle197.swyit
+productName: SwyIt-byRalle197
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!bridge/*'
+  - '!tests/*'
+  - '!plugins/*'
+  - '!scripts/*'
+  - '!electron.vite.config.*'
+  - '!{.eslintrc,.gitignore,tsconfig.json}'
+extraResources:
+  - from: out/bridge/
+    to: bridge/
+    filter:
+      - '**/*'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  shortcutName: SwyIt by Ralle197
