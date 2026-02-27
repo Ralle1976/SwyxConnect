@@ -132,7 +132,7 @@ public sealed class HistoryHandler
                 // Zeitstempel
                 try
                 {
-                    object dateObj = TryGetProperty(item, "Date", "TimeStamp", "DateTime", "DispDate", "StartTime");
+                    object dateObj = TryGetProperty(item, "Time", "Date", "TimeStamp", "DateTime", "DispDate", "StartTime");
                     if (dateObj is DateTime dt)
                         timestamp = new DateTimeOffset(dt).ToUnixTimeSeconds();
                     else if (dateObj is string dateStr && DateTime.TryParse(dateStr, out var parsed))
