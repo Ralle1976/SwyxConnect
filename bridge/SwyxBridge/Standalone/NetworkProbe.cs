@@ -622,4 +622,275 @@ public static class NetworkProbe
         catch (Exception ex) { return new { error = ex.Message }; }
         return found;
     }
+
+    /// <summary>
+    /// SIP REGISTER with CDS authentication: tries multiple username formats
+    /// (LoginID GUID, "Ralf Arnold", "Ralf.Arnold") with PSK as password.
+    /// If server returns 401 Digest challenge, computes MD5 Digest auth response.
+    /// </summary>
+    public static async Task<object> ProbeSipRegisterWithAuthAsync(string host, int port, string loginId, string psk, string displayName)
+    {
+        var results = new Dictionary<string, object>
+        {
+            ["host"] = host,
+            ["port"] = port,
+            ["loginId"] = loginId,
+            ["pskLength"] = psk?.Length ?? 0,
+            ["displayName"] = displayName
+        };
+
+        // The LoginID GUID is the SIP username.
+        // Try GUID only — all other formats get 403 Forbidden.
+        // Use longer timeout (20s) since server sends 100 Trying and may take time.
+        var attempts = new List<object>();
+
+        // Attempt 1: GUID as username, no auth (see if we get 401 challenge or 200 after wait)
+        var attempt1 = await TrySipRegisterAsync(host, port, loginId, psk, loginId, 20);
+        attempts.Add(attempt1);
+
+        // If step 1 returned 0 (timeout after 100 Trying), try with PSK embedded in Contact params
+        if (attempt1.TryGetValue("statusCode", out var sc1) && sc1 is int code1 && code1 == 0)
+        {
+            // Attempt 2: Try with PSK as Digest pre-auth (no challenge, just compute one)
+            var attempt2 = await TrySipRegisterPreAuthAsync(host, port, loginId, psk, 20);
+            attempts.Add(attempt2);
+        }
+
+        results["attempts"] = attempts;
+        return results;
+    }
+
+    /// <summary>
+    /// Try SIP REGISTER with Digest pre-auth (compute auth without server challenge).
+    /// Uses realm from the host, and a dummy nonce. Some SIP servers accept this.
+    /// </summary>
+    private static async Task<Dictionary<string, object>> TrySipRegisterPreAuthAsync(string host, int port, string loginId, string psk, int timeoutSeconds)
+    {
+        var result = new Dictionary<string, object> { ["username"] = loginId, ["method"] = "pre-auth-digest" };
+        var callId = $"reg-{Guid.NewGuid():N}";
+        var tag = $"t{Environment.TickCount:x8}";
+        var branch = $"z9hG4bK-reg-{Environment.TickCount}";
+        int localPort = 15060;
+
+        try
+        {
+            using var udp = new UdpClient(0);
+            udp.Client.ReceiveTimeout = 5000;
+
+            // Compute pre-emptive Digest auth with PSK as password
+            string realm = host;
+            string nonce = Guid.NewGuid().ToString("N");
+            string uri = $"sip:{host}";
+            string authResponse = ComputeDigestAuth(loginId, realm, psk, nonce, "REGISTER", uri, "MD5");
+            string authHeader = $"Digest username=\"{loginId}\", realm=\"{realm}\", nonce=\"{nonce}\", uri=\"{uri}\", response=\"{authResponse}\", algorithm=MD5";
+
+            var registerMsg = BuildSipRegister(host, port, loginId, callId, tag, branch, localPort, 1, authHeader);
+            result["registerSent"] = registerMsg;
+            var data = Encoding.UTF8.GetBytes(registerMsg);
+            await udp.SendAsync(data, data.Length, host, port);
+
+            var (statusCode, responseText, allResponses) = await ReadSipResponses(udp, timeoutSeconds);
+            result["statusCode"] = statusCode;
+            result["statusLine"] = responseText?.Split('\n')[0].Trim() ?? "(no response)";
+            result["responseCount"] = allResponses.Count;
+            if (allResponses.Count > 0)
+                result["allStatusLines"] = allResponses.Select(r => r.Split('\n')[0].Trim()).ToArray();
+            if (responseText != null)
+                result["fullResponse"] = responseText.Length > 1500 ? responseText[..1500] : responseText;
+        }
+        catch (Exception ex) { result["error"] = $"{ex.GetType().Name}: {ex.Message}"; }
+        return result;
+    }
+
+    /// <summary>
+    /// Single SIP REGISTER attempt. If 401 received, computes Digest auth and retries.
+    /// </summary>
+    private static async Task<Dictionary<string, object>> TrySipRegisterAsync(string host, int port, string username, string psk, string loginId, int timeoutSeconds = 8)
+    {
+        var result = new Dictionary<string, object> { ["username"] = username };
+        var callId = $"reg-{Guid.NewGuid():N}";
+        var tag = $"t{Environment.TickCount:x8}";
+        var branch = $"z9hG4bK-reg-{Environment.TickCount}";
+        int localPort = 15060;
+        // Sanitize username for SIP URI (no spaces)
+        var uriUser = username.Replace(" ", ".");
+
+        try
+        {
+            using var udp = new UdpClient(0);
+            udp.Client.ReceiveTimeout = 5000;
+
+            // Step 1: Initial REGISTER (unauthenticated)
+            var registerMsg = BuildSipRegister(host, port, uriUser, callId, tag, branch, localPort, 1, null);
+            var data = Encoding.UTF8.GetBytes(registerMsg);
+            await udp.SendAsync(data, data.Length, host, port);
+
+            // Read responses
+            var (statusCode, responseText, allResponses) = await ReadSipResponses(udp, timeoutSeconds);
+            result["step1StatusCode"] = statusCode;
+            result["step1StatusLine"] = responseText?.Split('\n')[0].Trim() ?? "(no response)";
+            result["step1ResponseCount"] = allResponses.Count;
+
+            // Step 2: If 401/407, extract Digest challenge and respond
+            if (statusCode == 401 || statusCode == 407)
+            {
+                result["challengeReceived"] = true;
+
+                // Parse WWW-Authenticate header
+                var authHeader = ExtractAuthHeader(responseText!);
+                result["authHeader"] = authHeader ?? "(not found)";
+
+                if (authHeader != null)
+                {
+                    var realm = ExtractParam(authHeader, "realm");
+                    var nonce = ExtractParam(authHeader, "nonce");
+                    var algorithm = ExtractParam(authHeader, "algorithm") ?? "MD5";
+                    result["realm"] = realm;
+                    result["nonce"] = nonce;
+                    result["algorithm"] = algorithm;
+
+                    if (realm != null && nonce != null)
+                    {
+                        // Compute Digest auth response
+                        var authResponse = ComputeDigestAuth(username, realm, psk, nonce, "REGISTER", $"sip:{host}", algorithm);
+                        var branch2 = $"z9hG4bK-reg2-{Environment.TickCount}";
+                        var authHeaderValue = $"Digest username=\"{username}\", realm=\"{realm}\", nonce=\"{nonce}\", uri=\"sip:{host}\", response=\"{authResponse}\", algorithm={algorithm}";
+                        
+                        var register2 = BuildSipRegister(host, port, uriUser, callId, tag, branch2, localPort, 2, authHeaderValue);
+                        var data2 = Encoding.UTF8.GetBytes(register2);
+                        await udp.SendAsync(data2, data2.Length, host, port);
+
+                        var (sc2, resp2, allResp2) = await ReadSipResponses(udp, 6);
+                        result["step2StatusCode"] = sc2;
+                        result["step2StatusLine"] = resp2?.Split('\n')[0].Trim() ?? "(no response)";
+                        result["step2ResponseCount"] = allResp2.Count;
+                        result["statusCode"] = sc2;
+                        if (resp2 != null)
+                            result["step2FullResponse"] = resp2.Length > 1500 ? resp2[..1500] : resp2;
+                    }
+                    else
+                    {
+                        result["statusCode"] = statusCode;
+                        result["note"] = "Missing realm or nonce in challenge";
+                    }
+                }
+                else
+                {
+                    result["statusCode"] = statusCode;
+                    result["note"] = "No WWW-Authenticate header found";
+                }
+            }
+            else
+            {
+                result["statusCode"] = statusCode;
+            }
+
+            if (responseText != null)
+                result["step1FullResponse"] = responseText.Length > 1500 ? responseText[..1500] : responseText;
+        }
+        catch (Exception ex)
+        {
+            result["error"] = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        return result;
+    }
+
+    private static string BuildSipRegister(string host, int port, string uriUser, string callId, string tag, string branch, int localPort, int cseq, string? authHeader)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"REGISTER sip:{host} SIP/2.0\r\n");
+        sb.Append($"Via: SIP/2.0/UDP 127.0.0.1:{localPort};branch={branch};rport\r\n");
+        sb.Append($"Max-Forwards: 70\r\n");
+        sb.Append($"From: <sip:{uriUser}@{host}>;tag={tag}\r\n");
+        sb.Append($"To: <sip:{uriUser}@{host}>\r\n");
+        sb.Append($"Call-ID: {callId}@127.0.0.1\r\n");
+        sb.Append($"CSeq: {cseq} REGISTER\r\n");
+        sb.Append($"Contact: <sip:{uriUser}@127.0.0.1:{localPort};transport=udp>\r\n");
+        sb.Append($"Expires: 3600\r\n");
+        sb.Append($"User-Agent: SwyxConnect/1.0\r\n");
+        sb.Append($"Allow: INVITE,ACK,BYE,CANCEL,OPTIONS,NOTIFY,REFER,INFO,SUBSCRIBE,UPDATE\r\n");
+        if (authHeader != null)
+            sb.Append($"Authorization: {authHeader}\r\n");
+        sb.Append($"Content-Length: 0\r\n\r\n");
+        return sb.ToString();
+    }
+
+    private static async Task<(int statusCode, string? responseText, List<string> allResponses)> ReadSipResponses(UdpClient udp, int timeoutSeconds)
+    {
+        var allResponses = new List<string>();
+        string? finalResponse = null;
+        int finalStatusCode = 0;
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            var recvTask = udp.ReceiveAsync();
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining.TotalMilliseconds < 100) break;
+            if (await Task.WhenAny(recvTask, Task.Delay((int)remaining.TotalMilliseconds)) != recvTask)
+                break;
+
+            var result = await recvTask;
+            var responseText = Encoding.UTF8.GetString(result.Buffer);
+            allResponses.Add(responseText);
+
+            var lines = responseText.Split('\n');
+            var statusLine = lines.Length > 0 ? lines[0].Trim() : "";
+            var parts = statusLine.Split(' ', 3);
+            if (parts.Length >= 2 && int.TryParse(parts[1], out int sc))
+            {
+                if (sc >= 200)
+                {
+                    finalResponse = responseText;
+                    finalStatusCode = sc;
+                    break;
+                }
+            }
+        }
+        return (finalStatusCode, finalResponse ?? (allResponses.Count > 0 ? allResponses[0] : null), allResponses);
+    }
+
+    private static string? ExtractAuthHeader(string response)
+    {
+        foreach (var line in response.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("WWW-Authenticate:", StringComparison.OrdinalIgnoreCase))
+                return trimmed.Substring("WWW-Authenticate:".Length).Trim();
+            if (trimmed.StartsWith("Proxy-Authenticate:", StringComparison.OrdinalIgnoreCase))
+                return trimmed.Substring("Proxy-Authenticate:".Length).Trim();
+        }
+        return null;
+    }
+
+    private static string? ExtractParam(string header, string paramName)
+    {
+        var idx = header.IndexOf(paramName + "=", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return null;
+        var start = idx + paramName.Length + 1;
+        if (start >= header.Length) return null;
+        if (header[start] == '"')
+        {
+            var end = header.IndexOf('"', start + 1);
+            return end > start ? header[(start + 1)..end] : null;
+        }
+        var endIdx = header.IndexOfAny(new[] { ',', ' ', '\r', '\n' }, start);
+        return endIdx > start ? header[start..endIdx] : header[start..];
+    }
+
+    private static string ComputeDigestAuth(string username, string realm, string password, string nonce, string method, string uri, string algorithm)
+    {
+        using var md5 = System.Security.Cryptography.MD5.Create();
+        string ha1 = MD5Hash(md5, $"{username}:{realm}:{password}");
+        string ha2 = MD5Hash(md5, $"{method}:{uri}");
+        string response = MD5Hash(md5, $"{ha1}:{nonce}:{ha2}");
+        return response;
+    }
+
+    private static string MD5Hash(System.Security.Cryptography.MD5 md5, string input)
+    {
+        var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(input));
+        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+    }
+
 }

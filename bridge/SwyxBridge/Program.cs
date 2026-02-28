@@ -321,6 +321,48 @@ static class Program
             return;
         }
 
+        // --- SIP REGISTER with CDS Auth (LoginID + PSK) ---
+        if (req.Method == "probeSipAuth")
+        {
+            if (_cdsAccessToken == null)
+            {
+                if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, "Zuerst cdsLogin aufrufen");
+                return;
+            }
+            string sipHost = "127.0.0.1"; int sipPort = 5060; int cdsPort = 9094;
+            if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                var p = req.Params.Value;
+                if (p.TryGetProperty("sipHost", out var h) && h.GetString() is string hv) sipHost = hv;
+                if (p.TryGetProperty("sipPort", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) sipPort = pt.GetInt32();
+                if (p.TryGetProperty("cdsPort", out var cp) && cp.ValueKind == System.Text.Json.JsonValueKind.Number) cdsPort = cp.GetInt32();
+            }
+            var capturedToken = _cdsAccessToken!;
+            var capturedUsername = _cdsUsername ?? "";
+            var capturedUserId = _cdsUserId;
+            Task.Run(async () =>
+            {
+                try
+                {
+                    // Get FRESH LoginID (IpPbxSrv type for SIP) + PSK from CDS — each LoginID is single-use!
+                    var cdsHost = "127.0.0.1";
+                    using var facade = new CdsPhoneClientFacade(cdsHost, cdsPort, capturedToken, capturedUsername);
+                    // Try IpPbxSrv-typed LoginID first, fall back to generic GetUserLoginIDEx
+                    Guid loginId;
+                    try { loginId = facade.GetUserLoginIDEx2(capturedUserId, CdsLoginIdType.IpPbxSrv); }
+                    catch { loginId = facade.GetUserLoginIDEx(capturedUserId); }
+                    var psk = facade.GetDecryptedPSK(capturedUserId);
+                    Logging.Info($"SIP Auth Probe: sipHost={sipHost}:{sipPort}, loginId={loginId}, pskLen={psk?.Length}");
+
+                    var result = await NetworkProbe.ProbeSipRegisterWithAuthAsync(
+                        sipHost, sipPort, loginId.ToString(), psk ?? "", capturedUsername);
+                    if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, result);
+                }
+                catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            });
+            return;
+        }
+
         // --- CDS Login (AcquireToken) ---
         if (req.Method == "cdsLogin")
         {
@@ -452,6 +494,10 @@ static class Program
                     try { info["userLoginId"] = facade.GetUserLoginID().ToString(); } catch (Exception ex) { info["userLoginIdError"] = ex.Message; }
                     try { info["userLoginIdEx"] = facade.GetUserLoginIDEx(_cdsUserId).ToString(); } catch (Exception ex) { info["userLoginIdExError"] = ex.Message; }
                     try { var creds = facade.GetSipCredentials(_cdsUserId); info["sipRealm"] = creds?.SipRealm; info["sipUserId"] = creds?.SipUserID; info["sipUserName"] = creds?.SipUserName; } catch (Exception ex) { info["sipCredError"] = ex.Message; }
+                    try { var psk = facade.GetDecryptedPSK(_cdsUserId); info["presharedKey"] = psk; info["pskLength"] = psk?.Length ?? 0; } catch (Exception ex) { info["pskError"] = ex.Message; }
+                    try { var raw = facade.GetRawPSK(_cdsUserId); info["pskRawLength"] = raw?.Length ?? 0; } catch (Exception ex) { info["pskRawError"] = ex.Message; }
+                    try { info["loginIdEx2_IpPbxSrv"] = facade.GetUserLoginIDEx2(_cdsUserId, CdsLoginIdType.IpPbxSrv).ToString(); } catch (Exception ex) { info["loginIdEx2_IpPbxSrvError"] = ex.Message; }
+                    try { info["loginIdEx2_UaCstaSrv"] = facade.GetUserLoginIDEx2(_cdsUserId, CdsLoginIdType.UaCstaSrv).ToString(); } catch (Exception ex) { info["loginIdEx2_UaCstaSrvError"] = ex.Message; }
                     if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, info);
                 }
                 catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }

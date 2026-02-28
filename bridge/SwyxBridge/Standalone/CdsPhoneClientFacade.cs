@@ -39,6 +39,16 @@ public class CdsServerInfo
 // WCF Service Contract (IPhoneClientFacade)
 // ──────────────────────────────────────────────────────────
 
+// LoginIdType enum — decompiled from SWConfigDataClientLib
+// IpPbxSrv = used for SIP registration
+// UaCstaSrv = used for UACSTA server authentication
+[DataContract(Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataWSLib.Transport")]
+public enum CdsLoginIdType
+{
+    [EnumMember] IpPbxSrv = 0,
+    [EnumMember] UaCstaSrv = 1
+}
+
 [ServiceContract(ConfigurationName = "WSPhoneClientFacade.IPhoneClientFacade")]
 public interface ICdsPhoneClientFacade
 {
@@ -68,6 +78,18 @@ public interface ICdsPhoneClientFacade
     [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentUserName", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetCurrentUserNameResponse")]
     [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentUserNameTExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
     int GetCurrentUserName(out string UserName);
+
+    [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentPSK", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetCurrentPSKResponse")]
+    [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentPSKTExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
+    byte[] GetCurrentPSK();
+
+    [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentPSKEx", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetCurrentPSKExResponse")]
+    [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentPSKExTExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
+    byte[] GetCurrentPSKEx(int UserID);
+
+    [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDEx2", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDEx2Response")]
+    [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDEx2TExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
+    Guid GetUserLoginIDEx2(int UserID, CdsLoginIdType type);
 }
 
 // ──────────────────────────────────────────────────────────
@@ -344,6 +366,21 @@ public sealed class CdsPhoneClientFacade : IDisposable
         }
     }
 
+    /// <summary>Get login session GUID with specific type (IpPbxSrv for SIP, UaCstaSrv for UACSTA).</summary>
+    public Guid GetUserLoginIDEx2(int userId, CdsLoginIdType type)
+    {
+        var factory = GetOrCreateFactory();
+        var channel = factory.CreateChannel();
+        try
+        {
+            return channel.GetUserLoginIDEx2(userId, type);
+        }
+        finally
+        {
+            CloseChannel(channel);
+        }
+    }
+
     /// <summary>Get the current user's name from the CDS session.</summary>
     public (int userId, string userName) GetCurrentUserName()
     {
@@ -353,6 +390,39 @@ public sealed class CdsPhoneClientFacade : IDisposable
         {
             int result = channel.GetCurrentUserName(out string userName);
             return (result, userName);
+        }
+        finally
+        {
+            CloseChannel(channel);
+        }
+    }
+
+
+    /// <summary>Get Pre-Shared Key (DES-encrypted) and decrypt it.</summary>
+    public string GetDecryptedPSK(int userId)
+    {
+        var factory = GetOrCreateFactory();
+        var channel = factory.CreateChannel();
+        try
+        {
+            byte[] encrypted = channel.GetCurrentPSKEx(userId);
+            if (encrypted == null || encrypted.Length == 0) return "";
+            return CdsCrypt.DecryptDES(encrypted);
+        }
+        finally
+        {
+            CloseChannel(channel);
+        }
+    }
+
+    /// <summary>Get raw PSK bytes (for diagnostics).</summary>
+    public byte[] GetRawPSK(int userId)
+    {
+        var factory = GetOrCreateFactory();
+        var channel = factory.CreateChannel();
+        try
+        {
+            return channel.GetCurrentPSKEx(userId);
         }
         finally
         {
@@ -390,5 +460,53 @@ public sealed class CdsPhoneClientFacade : IDisposable
             _channelFactory?.Abort();
         }
         _channelFactory = null;
+    }
+}
+
+// ──────────────────────────────────────────────────────────
+// DES Decryption — matches SWConfigDataSharedLib.Security.SCrypt
+// ──────────────────────────────────────────────────────────
+
+internal static class CdsCrypt
+{
+    // Hardcoded keys from decompiled SCrypt.cs
+    private static readonly byte[] DesKey = new byte[]
+    {
+        101, 32, 105, 52, 239, 97, 22, 32, 50, 114,
+        37, 32, 101, 50, 111, 99, 110, 50, 130, 119,
+        87, 94, 111, 32, 57, 145, 101, 117, 131, 134,
+        67, 118, 121, 104, 71, 114, 24, 97, 101, 86
+    };
+
+    private static readonly int[] DesIndex = new int[]
+    {
+        20, 12, 1, 5, 9, 38, 23, 33, 26, 37,
+        31, 32, 11, 14, 16, 7, 19, 2, 35, 0
+    };
+
+    public static string DecryptDES(byte[] encryptedData)
+    {
+        if (encryptedData == null || encryptedData.Length == 0) return "";
+
+        #pragma warning disable SYSLIB0021 // DES is obsolete but required for Swyx compatibility
+        using var des = System.Security.Cryptography.DES.Create();
+        #pragma warning restore SYSLIB0021
+
+        // Build key from DesKey[DesIndex[j % 20]]
+        byte[] key = new byte[des.Key.Length];
+        for (int j = 0; j < key.Length; j++)
+            key[j] = DesKey[DesIndex[j % DesIndex.Length]];
+        des.Key = key;
+
+        // Build IV from DesKey[DesIndex[19 - k % 20]]
+        byte[] iv = new byte[des.IV.Length];
+        for (int k = 0; k < iv.Length; k++)
+            iv[k] = DesKey[DesIndex[DesIndex.Length - 1 - k % DesIndex.Length]];
+        des.IV = iv;
+
+        using var ms = new System.IO.MemoryStream(encryptedData, writable: false);
+        using var cs = new System.Security.Cryptography.CryptoStream(ms, des.CreateDecryptor(), System.Security.Cryptography.CryptoStreamMode.Read);
+        using var sr = new System.IO.StreamReader(cs);
+        return sr.ReadLine() ?? "";
     }
 }
