@@ -302,6 +302,54 @@ node scripts/test-bridge.mjs
 ```
 Spawnt Bridge über `powershell.exe`, sendet JSON-RPC Requests, prüft Responses.
 
+### Linux Dev-Environment (WICHTIG — FÜR AGENTEN)
+
+Auf dem Linux Dev-Server (kein Windows, kein COM) kann die App trotzdem
+gestartet und die UI getestet werden. Bridge wird nicht verbinden, aber UI läuft.
+
+```bash
+# Projekt auschecken (falls nicht vorhanden)
+gh repo clone Ralle1976/SwyxConnect /tmp/SwyxConnect
+cd /tmp/SwyxConnect
+
+# Dependencies installieren + bauen
+npm install
+npx electron-vite build
+
+# App starten (DISPLAY=:0 ist gesetzt, GPU deaktivieren wegen headless)
+DISPLAY=:0 npx electron out/main/index.js --disable-gpu --no-sandbox --remote-debugging-port=9222 &
+
+# Screenshot via CDP (Chrome DevTools Protocol)
+# 1. Warten bis App bereit:
+curl -s http://localhost:9222/json/list  # zeigt Page-ID
+
+# 2. Screenshot via Node.js + WebSocket:
+npm install ws --no-save
+node -e "
+const WebSocket = require('ws');
+const fs = require('fs');
+// Page-ID aus curl-Ausgabe nehmen:
+const ws = new WebSocket('ws://127.0.0.1:9222/devtools/page/<PAGE_ID>');
+ws.on('open', () => {
+  ws.send(JSON.stringify({id:1, method:'Page.captureScreenshot', params:{format:'png'}}));
+});
+ws.on('message', (data) => {
+  const msg = JSON.parse(data);
+  if (msg.result?.data) {
+    fs.writeFileSync('/tmp/screenshot.png', Buffer.from(msg.result.data, 'base64'));
+    console.log('Screenshot saved');
+    ws.close();
+  }
+});
+"
+
+# App stoppen
+pkill -f electron
+```
+
+**Merke:** ffmpeg X11-Grab liefert schwarzes Bild (Weston-Compositor).
+NUR CDP-Screenshots über Port 9222 funktionieren!
+
 ---
 
 ## Datenfluss: Anruf
@@ -344,21 +392,29 @@ COM feuert PubOnLineMgrNotification(msg=0..3)
 - E2E App-Start: Bridge verbindet, UI zeigt "Verbunden"
 - Multi-Line COM API: DispNumberOfLines, DispGetLine(int)
 - GitHub CI Pipeline (Build + Security Audit)
+- **UI startet auch auf Linux** (DISPLAY=:0, --disable-gpu, CDP-Screenshots)
+- **Forced-Show Fallback**: Fenster erscheint spätestens nach 5s
+- **Tastaturkürzel**: F5=Annehmen, F6=Auflegen, F7=Halten, F8=Stumm, Esc=Auflegen
+- **Callcenter-Dashboard**: 8 KPI-Karten, Mein Status, Team-Übersicht, Letzte Anrufe
+- **Theme Hell/Dunkel/System**: Tailwind v4 @custom-variant dark
+- **Kontakte**: DispSearchPhoneBookEntries("") lädt alle
+- **Leitungsanzahl**: IPC-Kette Settings → Bridge → DispSetNumberOfLines(n)
+- **Audio-Test**: 440Hz Sinuston + Mikrofon-Pegel-Meter
 
-### In Arbeit 🔧
+### SwyxIt!-Fensterunterdrückung 🔧
 
-- **Anruf-Flow End-to-End**: Bridge-Code ist korrigiert (multi-line), Frontend aktualisiert — noch nicht live getestet
-- **SwyxIt!-Fensterunterdrückung**: Code vorhanden, Timing-abhängig
+- **EnumWindows** findet ALLE Top-Level-Fenster (nicht nur MainWindowHandle)
+- **SW_HIDE** statt SW_SHOWMINNOACTIVE (komplett unsichtbar)
+- **ProcessWindowStyle.Hidden** beim Start
+- Periodisch alle 1.5s + nach jedem Dial + während CLMgr-Wartezeit
+- **Noch nicht auf Windows live getestet** — User muss verifizieren
 
 ### Geplant 📋
 
 - Microsoft Teams V2 WebSocket Präsenz-Sync (bidirektional)
 - electron-builder Packaging (.exe Installer)
 - Plugin-System (Erweiterbarkeit)
-- Callcenter-Dashboard mit Live-Daten
-- Keyboard Shortcuts
 - macOS-Support (via REST/Remote Bridge — Server-Ports aktuell blockiert)
-
 ---
 
 ## Umgebung
