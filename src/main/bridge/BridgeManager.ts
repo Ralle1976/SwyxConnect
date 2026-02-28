@@ -72,7 +72,14 @@ export class BridgeManager extends EventEmitter {
       console.log(`[Bridge] Copied to Windows path: ${this._resolvedBridgePath}`);
       return this._resolvedBridgePath;
     } catch {
-      // Fallback: use original WSL path (may cause stale assembly issues)
+      // Fallback 1: Check Windows temp directory (pre-deployed bridge)
+      const winFallback = '/mnt/c/temp/SwyxBridge/SwyxBridge.exe';
+      if (fs.existsSync(winFallback)) {
+        this._resolvedBridgePath = winFallback;
+        console.log(`[Bridge] Using Windows fallback: ${this._resolvedBridgePath}`);
+        return this._resolvedBridgePath;
+      }
+      // Fallback 2: use original WSL path (may cause stale assembly issues)
       console.warn('[Bridge] Failed to copy to Windows path, using WSL path');
       this._resolvedBridgePath = bridgeExe;
       return this._resolvedBridgePath;

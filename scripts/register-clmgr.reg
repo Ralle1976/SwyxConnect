@@ -1,0 +1,52 @@
+Windows Registry Editor Version 5.00
+
+; ============================================================================
+; SwyxConnect — CLMgr COM-Registrierung
+; ============================================================================
+; Registriert CLMgr.exe als COM-Server fuer Standalone-Betrieb.
+; WICHTIG: Pfad in LocalServer32 ggf. anpassen!
+;
+; Standard-Pfad: %LOCALAPPDATA%\SwyxConnect\clmgr\CLMgr.exe
+; Alternativ:    C:\Program Files (x86)\Swyx\SwyxIt!\CLMgr.exe
+;
+; Als Administrator ausfuehren (Rechtsklick → Zusammenfuehren)
+; ============================================================================
+
+; --- AppID ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\AppID\{F8E552A5-4C00-11D3-80BC-00105A653379}]
+@="CLMgr"
+"RunAs"="Interactive User"
+
+; --- CLSID ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\{F8E552F8-4C00-11D3-80BC-00105A653379}]
+@="Swyx CLMgr"
+"AppID"="{F8E552A5-4C00-11D3-80BC-00105A653379}"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\{F8E552F8-4C00-11D3-80BC-00105A653379}\LocalServer32]
+@="\"C:\\Program Files (x86)\\Swyx\\SwyxIt!\\CLMgr.exe\""
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\{F8E552F8-4C00-11D3-80BC-00105A653379}\ProgID]
+@="CLMgr.ClientLineMgr.2"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\{F8E552F8-4C00-11D3-80BC-00105A653379}\VersionIndependentProgID]
+@="CLMgr.ClientLineMgr"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\{F8E552F8-4C00-11D3-80BC-00105A653379}\TypeLib]
+@="{F8E552F7-4C00-11D3-80BC-00105A653379}"
+
+; --- ProgID ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLMgr.ClientLineMgr]
+@="Swyx Client Line Manager"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLMgr.ClientLineMgr\CLSID]
+@="{F8E552F8-4C00-11D3-80BC-00105A653379}"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLMgr.ClientLineMgr\CurVer]
+@="CLMgr.ClientLineMgr.2"
+
+; --- ProgID (versioned) ---
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLMgr.ClientLineMgr.2]
+@="Swyx Client Line Manager"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLMgr.ClientLineMgr.2\CLSID]
+@="{F8E552F8-4C00-11D3-80BC-00105A653379}"
