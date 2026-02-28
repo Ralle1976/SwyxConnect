@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IpPbx.CLMgrLib;
 using SwyxBridge.Com;
 using SwyxBridge.JsonRpc;
 using SwyxBridge.Utils;
@@ -7,12 +8,12 @@ namespace SwyxBridge.Handlers;
 
 /// <summary>
 /// Anrufverlauf via DispClientConfig.CallerEnumerator.
-/// 
-/// CallerEnumerator liefert eine IDispatch Collection mit Anrufhistorie-Einträgen.
-/// Jeder Eintrag hat typischerweise: Name, Number, Date/Time, Duration, CallType.
 ///
-/// Fallback: get_DispNumberHistory(out name, out number, out date, out time, out duration, out type)
-/// → Liefert nur den letzten Anruf.
+/// Verwendet typisierte CallerCollectionClass und CallerItemClass aus IpPbx.CLMgrLib.
+/// CallerItemClass bietet: Name, Number, Time (DateTime), CallDuration, CallState,
+/// DialedNumber, DialedName, ConnectedName, CallbackState, Viewed, Idx.
+///
+/// Fallback: get_DispNumberHistory (nur letzter Eintrag) via dynamic cast.
 /// </summary>
 public sealed class HistoryHandler
 {
@@ -46,7 +47,7 @@ public sealed class HistoryHandler
         var com = _connector.GetCom();
         if (com == null) return Array.Empty<object>();
 
-        // Versuch 1: DispClientConfig.CallerEnumerator
+        // Versuch 1: DispClientConfig.CallerEnumerator (typisiert)
         try
         {
             return GetHistoryViaCallerEnumerator(com);
@@ -56,7 +57,7 @@ public sealed class HistoryHandler
             Logging.Warn($"HistoryHandler: CallerEnumerator fehlgeschlagen: {ex.Message}");
         }
 
-        // Versuch 2: get_DispNumberHistory (nur letzter Eintrag)
+        // Versuch 2: get_DispNumberHistory (nur letzter Eintrag, dynamic da nicht im typed interface)
         try
         {
             return GetHistoryViaDispNumberHistory(com);
@@ -70,24 +71,46 @@ public sealed class HistoryHandler
     }
 
     /// <summary>
-    /// Liest die Anrufliste über DispClientConfig.CallerEnumerator.
+    /// Liest die Anrufliste über typisierte CallerCollectionClass / CallerItemClass.
     /// </summary>
-    private object[] GetHistoryViaCallerEnumerator(dynamic com)
+    private object[] GetHistoryViaCallerEnumerator(ClientLineMgrClass com)
     {
-        dynamic cfg = com.DispClientConfig;
-        dynamic callerEnum = cfg.CallerEnumerator;
-
-        if (callerEnum == null)
+        // DispClientConfig returns object — cast to ClientConfigClass for typed CallerEnumerator access
+        var cfgObj = com.DispClientConfig;
+        if (cfgObj == null)
         {
-            Logging.Warn("HistoryHandler: CallerEnumerator ist null.");
+            Logging.Warn("HistoryHandler: DispClientConfig ist null.");
+            return Array.Empty<object>();
+        }
+
+        // CallerEnumerator property is on ClientConfigClass — use dynamic to access it
+        // since IClientConfig interface may not expose CallerEnumerator directly
+        dynamic cfg = cfgObj;
+        CallerCollectionClass? callerColl = null;
+
+        try
+        {
+            var enumObj = cfg.CallerEnumerator;
+            callerColl = enumObj as CallerCollectionClass;
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"HistoryHandler: CallerEnumerator Zugriff fehlgeschlagen: {ex.Message}");
+            return Array.Empty<object>();
+        }
+
+        if (callerColl == null)
+        {
+            Logging.Warn("HistoryHandler: CallerEnumerator ist null oder falscher Typ.");
             return Array.Empty<object>();
         }
 
         int count = 0;
-        try { count = (int)callerEnum.Count; }
-        catch
+        try { count = callerColl.Count; }
+        catch (Exception ex)
         {
-            try { count = (int)callerEnum.DispCount; } catch { }
+            Logging.Warn($"HistoryHandler: CallerCollection.Count fehlgeschlagen: {ex.Message}");
+            return Array.Empty<object>();
         }
 
         if (count == 0)
@@ -105,20 +128,30 @@ public sealed class HistoryHandler
         {
             try
             {
-                dynamic item = callerEnum.Item(i);
+                // Item() takes object index (COM convention)
+                var itemObj = callerColl.Item((object)i);
+                if (itemObj is not CallerItemClass item) continue;
 
-                // Verschiedene Property-Namen probieren (COM-Interface-Varianten)
-                string callerName = TryGetString(item, "Name", "CallerName", "DispName", "DisplayName") ?? "";
-                string callerNumber = TryGetString(item, "Number", "CallerNumber", "DispNumber", "PhoneNumber") ?? "";
-                string direction = "inbound";
+                string callerName   = item.Name ?? "";
+                string callerNumber = item.Number ?? "";
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 int duration = 0;
+                string direction = "inbound";
 
-                // Richtung (CallType / Direction / Type)
+                // Zeitstempel aus typisierten DateTime property
                 try
                 {
-                    int callType = TryGetInt(item, "CallType", "Type", "Direction", "DispCallType");
-                    direction = callType switch
+                    timestamp = new DateTimeOffset(item.Time).ToUnixTimeSeconds();
+                }
+                catch { }
+
+                // Dauer
+                try { duration = item.CallDuration; } catch { }
+
+                // Richtung aus CallState: 0=inbound, 1=outbound, 2=missed, 3=forwarded
+                try
+                {
+                    direction = item.CallState switch
                     {
                         0 => "inbound",
                         1 => "outbound",
@@ -126,24 +159,6 @@ public sealed class HistoryHandler
                         3 => "forwarded",
                         _ => "inbound"
                     };
-                }
-                catch { }
-
-                // Zeitstempel
-                try
-                {
-                    object dateObj = TryGetProperty(item, "Time", "Date", "TimeStamp", "DateTime", "DispDate", "StartTime");
-                    if (dateObj is DateTime dt)
-                        timestamp = new DateTimeOffset(dt).ToUnixTimeSeconds();
-                    else if (dateObj is string dateStr && DateTime.TryParse(dateStr, out var parsed))
-                        timestamp = new DateTimeOffset(parsed).ToUnixTimeSeconds();
-                }
-                catch { }
-
-                // Dauer
-                try
-                {
-                    duration = TryGetInt(item, "Duration", "DispDuration", "CallDuration");
                 }
                 catch { }
 
@@ -166,17 +181,19 @@ public sealed class HistoryHandler
             }
         }
 
-        Logging.Info($"HistoryHandler: {entries.Count} History-Einträge geladen via CallerEnumerator.");
+        Logging.Info($"HistoryHandler: {entries.Count} History-Einträge geladen via CallerEnumerator (typisiert).");
         return entries.ToArray();
     }
 
     /// <summary>
     /// Fallback: Liest nur den letzten Anruf über get_DispNumberHistory.
+    /// Diese Methode ist nicht im typed interface — dynamic cast erforderlich.
     /// </summary>
-    private object[] GetHistoryViaDispNumberHistory(dynamic com)
+    private object[] GetHistoryViaDispNumberHistory(ClientLineMgrClass com)
     {
         string name = "", number = "", date = "", time = "", duration = "", type = "";
-        com.get_DispNumberHistory(ref name, ref number, ref date, ref time, ref duration, ref type);
+        // get_DispNumberHistory ist nicht im IClientLineMgrDisp interface dokumentiert — dynamic cast
+        ((dynamic)com).get_DispNumberHistory(ref name, ref number, ref date, ref time, ref duration, ref type);
 
         if (string.IsNullOrEmpty(number) && string.IsNullOrEmpty(name))
             return Array.Empty<object>();
@@ -201,52 +218,6 @@ public sealed class HistoryHandler
                 duration = int.TryParse(duration, out var d) ? d : 0
             }
         };
-    }
-
-    // ─── COM Property Helper ─────────────────────────────────────────────────
-
-    private static string? TryGetString(dynamic item, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            try
-            {
-                object val = item.GetType().InvokeMember(name,
-                    System.Reflection.BindingFlags.GetProperty, null, item, null);
-                if (val != null) return val.ToString();
-            }
-            catch { }
-        }
-        return null;
-    }
-
-    private static int TryGetInt(dynamic item, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            try
-            {
-                object val = item.GetType().InvokeMember(name,
-                    System.Reflection.BindingFlags.GetProperty, null, item, null);
-                if (val != null) return Convert.ToInt32(val);
-            }
-            catch { }
-        }
-        return 0;
-    }
-
-    private static object? TryGetProperty(dynamic item, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            try
-            {
-                return item.GetType().InvokeMember(name,
-                    System.Reflection.BindingFlags.GetProperty, null, item, null);
-            }
-            catch { }
-        }
-        return null;
     }
 
     private static long ParseDateTimeToUnix(string? date, string? time)

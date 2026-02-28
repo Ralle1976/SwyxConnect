@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IpPbx.CLMgrLib;
 using SwyxBridge.Com;
 using SwyxBridge.JsonRpc;
 using SwyxBridge.Utils;
@@ -7,6 +8,7 @@ namespace SwyxBridge.Handlers;
 
 /// <summary>
 /// Kontaktsuche via CLMgr COM Phonebook-Interface.
+/// Verwendet FulltextSearchInContactsEx (typisiert) statt DispSearchPhoneBookEntries (nicht vorhanden).
 /// </summary>
 public sealed class ContactHandler
 {
@@ -56,19 +58,26 @@ public sealed class ContactHandler
 
         try
         {
-            // Versuche DispSearchPhoneBookEntries (Swyx-typische Methode)
-            var entries = com.DispSearchPhoneBookEntries(query);
-            if (entries == null) return Array.Empty<object>();
+            // FulltextSearchInContactsEx ist die korrekte typisierte Methode.
+            // Parameter: searchText, bSearchInPhonebook, bSearchInPlugins, bSearchInNumbers, out resultCollection
+            int hr = com.FulltextSearchInContactsEx(query, 1, 1, 1, out object resultCollection);
+            if (resultCollection == null) return Array.Empty<object>();
 
-            int count = (int)entries.Count;
-            Logging.Info($"ContactHandler: {count} Kontakte für '{query}' gefunden.");
+            // Das Ergebnis ist eine COM-Collection — dynamic für den Zugriff auf Items,
+            // da der konkrete Typ der Elemente nicht dokumentiert ist.
+            dynamic collection = resultCollection;
+
+            int count = 0;
+            try { count = (int)collection.Count; } catch { }
+
+            Logging.Info($"ContactHandler: {count} Kontakte für '{query}' gefunden (FulltextSearchInContactsEx).");
 
             var result = new List<object>();
             for (int i = 1; i <= count; i++)
             {
                 try
                 {
-                    var entry = entries.Item(i);
+                    dynamic entry = collection.Item(i);
                     if (entry == null) continue;
 
                     result.Add(new

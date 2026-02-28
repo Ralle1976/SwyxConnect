@@ -13,7 +13,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Swyx.Client.ClmgrAPI" Version="*" />
+    <PackageReference Include="Swyx.Client.ClmgrAPI" Version="14.21.0" />
     <PackageReference Include="System.Text.Json" Version="8.*" />
   </ItemGroup>
 

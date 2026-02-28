@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IpPbx.CLMgrLib;
 using SwyxBridge.Com;
 using SwyxBridge.JsonRpc;
 using SwyxBridge.Utils;
@@ -7,7 +8,7 @@ namespace SwyxBridge.Handlers;
 
 /// <summary>
 /// Behandelt Präsenz-bezogene JSON-RPC Methoden.
-/// 
+///
 /// WICHTIG: DispSkinPhoneCommand(131, n) ist nur ein UI-Befehl und ändert NICHT
 /// den serverseitigen Presence-Status. Stattdessen verwenden wir DispClientConfig:
 ///
@@ -19,8 +20,13 @@ namespace SwyxBridge.Handlers;
 ///   cfg.PublicateDetectedAwayState(int) → Publiziert Away-Status an Server
 ///   cfg.ReloadPresenceData() → Lädt Presence-Daten vom Server neu
 ///
-/// Strategie: Wir versuchen ALLE bekannten Methoden und loggen die Ergebnisse,
-/// damit wir sehen was tatsächlich funktioniert.
+/// HINWEIS: DispClientConfig wird als dynamic gehalten, da die Eigenschaften
+/// Away/DoNotDisturb/AwayText sowie Methoden wie SetRichPresenceStatus und
+/// PublicateDetectedAwayState nicht auf einem standardisierten COM-Interface
+/// liegen, das vom SDK exportiert wird — nur auf ClientConfigClass selbst.
+///
+/// GetUserAppearances() und SpeedDial-Methoden sind ebenfalls nicht im
+/// dokumentierten typed interface — dynamic cast erforderlich.
 /// </summary>
 public sealed class PresenceHandler
 {
@@ -74,6 +80,9 @@ public sealed class PresenceHandler
 
         try
         {
+            // DispClientConfig returns object — dynamic da ClientConfigClass-Properties
+            // (Away, DoNotDisturb, AwayText, SetRichPresenceStatus usw.) nicht auf
+            // einem öffentlichen COM-Interface liegen das vom SDK exportiert wird.
             dynamic cfg = com.DispClientConfig;
 
             // Primär: Direkte Properties lesen
@@ -130,10 +139,10 @@ public sealed class PresenceHandler
         {
             Logging.Error($"PresenceHandler: GetOwnPresence DispClientConfig: {ex.Message}");
 
-            // Letzter Fallback: DispSkinGetActionAreaState
+            // Letzter Fallback: DispSkinGetActionAreaState (typisiert — uint → uint)
             try
             {
-                uint stateCode = (uint)com.DispSkinGetActionAreaState(131u, 0u);
+                uint stateCode = com.DispSkinGetActionAreaState(131u, 0u);
                 string status = stateCode switch
                 {
                     0 => "Available",
@@ -174,6 +183,8 @@ public sealed class PresenceHandler
 
         try
         {
+            // dynamic cfg: Away/DoNotDisturb/AwayText/SetRichPresenceStatus/PublicateDetectedAwayState
+            // sind nur auf ClientConfigClass verfügbar, nicht auf einem typed COM interface.
             dynamic cfg = com.DispClientConfig;
 
             // Aktuellen Zustand vorher loggen
@@ -398,7 +409,7 @@ public sealed class PresenceHandler
         if (com == null)
             return new { colleagues = Array.Empty<object>() };
 
-        // Beim ersten Aufruf: Benachrichtigungen aktivieren
+        // Beim ersten Aufruf: Benachrichtigungen aktivieren (typisiert — ist im interface)
         if (!_appearanceNotificationsEnabled)
         {
             try
@@ -415,7 +426,8 @@ public sealed class PresenceHandler
 
         try
         {
-            dynamic? appearances = com.GetUserAppearances();
+            // GetUserAppearances() ist nicht im dokumentierten typed interface — dynamic cast
+            dynamic? appearances = ((dynamic)com).GetUserAppearances();
             if (appearances == null)
                 return new { colleagues = Array.Empty<object>() };
 
@@ -485,31 +497,35 @@ public sealed class PresenceHandler
 
     /// <summary>
     /// Fallback: Liest Kollegeninfo über SpeedDials (immer verfügbar).
+    /// DispSpeedDialName/Number/State sind nicht im typed interface — dynamic cast.
     /// </summary>
-    private object GetPresenceViaSpeedDials(dynamic com)
+    private object GetPresenceViaSpeedDials(ClientLineMgrClass com)
     {
         var colleagues = new List<object>();
 
         try
         {
-            int numSpeedDials = (int)com.DispNumberOfSpeedDials;
+            // DispNumberOfSpeedDials ist typisiert (int property)
+            int numSpeedDials = com.DispNumberOfSpeedDials;
             Logging.Info($"PresenceHandler: Fallback via SpeedDials ({numSpeedDials} Einträge).");
 
             for (int i = 0; i < numSpeedDials && i < 200; i++)
             {
                 try
                 {
-                    string name = (string)(com.DispSpeedDialName(i) ?? "");
-                    string number = (string)(com.DispSpeedDialNumber(i) ?? "");
-                    int state = (int)com.DispSpeedDialState(i);
+                    // DispSpeedDialName/Number/State sind nicht im typed interface — dynamic cast
+                    dynamic dynCom = com;
+                    string name   = (string)(dynCom.DispSpeedDialName(i) ?? "");
+                    string number = (string)(dynCom.DispSpeedDialNumber(i) ?? "");
+                    int state     = (int)dynCom.DispSpeedDialState(i);
 
                     if (!string.IsNullOrEmpty(name))
                     {
                         colleagues.Add(new
                         {
-                            userId = $"sd_{i}",
+                            userId    = $"sd_{i}",
                             name,
-                            status = MapSpeedDialStateToPresence(state),
+                            status    = MapSpeedDialStateToPresence(state),
                             extension = number
                         });
                     }

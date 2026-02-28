@@ -7,7 +7,7 @@
 
 ## Projekt-Überblick
 
-**SwyxConnect** ist ein moderner Electron-basierter Desktop-Softphone-Client, der SwyxIt! als primäre Benutzeroberfläche für Swyx/Enreach-Telefonie ersetzt. Die Anwendung kommuniziert über eine C#-COM-Bridge mit dem lokalen Swyx Client Line Manager (CLMgr).
+**SwyxConnect** ist ein moderner Electron-basierter Desktop-Softphone-Client, der SwyxIt! als primäre Benutzeroberfläche für Swyx/Enreach-Telefonie ersetzt. Die Anwendung nutzt das **Swyx Client SDK** (`Swyx.Client.ClmgrAPI` v14.21.0 NuGet) für typisierte COM-Interop über eine C#-Bridge.
 
 - **Repo**: https://github.com/Ralle1976/SwyxConnect
 - **Wiki**: https://github.com/Ralle1976/SwyxConnect/wiki
@@ -30,15 +30,17 @@
 │  ┌─────▼─────────────────────────────────┐      │
 │  │  C# Bridge (SwyxBridge.exe)           │      │
 │  │  .NET 8 | [STAThread] | WinForms Pump │      │
-│  │  COM Interop → CLMgr.exe              │      │
+│  │  Swyx.Client.ClmgrAPI v14.21.0 (SDK)  │      │
+│  │  Hybrid COM: ProgID + typed SDK cast   │      │
 │  └───────────────────────────────────────┘      │
 └─────────────────────────────────────────────────┘
          │
          ▼
-  ┌──────────────┐
-  │  CLMgr.exe   │  Swyx Client Line Manager (COM-Server)
-  │  (headless)  │  Registriert als COM-Objekt {f8e5536b-...}
-  └──────────────┘
+  ┌──────────────────┐
+  │  Swyx COM Server │  CLMgr (COM-Server, CLSID {f8e552f8-...})
+  │  via SDK typed   │  Standalone-Modus: DispInit(serverName)
+  │  interfaces      │  Attach-Modus: SwyxIt!.exe als COM-Host
+  └──────────────────┘
 ```
 
 ### IPC-Protokoll
@@ -73,9 +75,9 @@
 
 ### Plattform
 
-- **Nur Windows x64** — kein ARM64, kein macOS, kein Linux (macOS auf later verschoben)
-- **SwyxIt! 14.x** muss lokal installiert und angemeldet sein
-
+- **Nur Windows x64** — kein ARM64, kein macOS, kein Linux
+- **Swyx Client SDK v14.21.0** — NuGet-Paket `Swyx.Client.ClmgrAPI`
+- **Standalone oder Attach**: SDK verbindet sich direkt zum Server via `DispInit()` oder nutzt laufende SwyxIt!-Session
 ---
 
 ## Technische Entscheidungen (VERBINDLICH)
@@ -85,6 +87,9 @@ DECISION: IPC = Newline-delimited JSON mit JSON-RPC 2.0 Envelope
 DECISION: C# Bridge = [STAThread] + Application.Run() Message-Pump (WinForms-Dependency)
 DECISION: Ship x64 Windows only. Kein ARM64, kein macOS, kein Linux.
 DECISION: Bridge-Prozess kill = taskkill /PID {pid} /F (nicht child.kill())
+DECISION: COM-Erstellung = Type.GetTypeFromProgID + Activator.CreateInstance, NICHT new ClientLineMgrClass() (hängt auf STA)
+DECISION: SDK NuGet = Swyx.Client.ClmgrAPI v14.21.0 (typed COM interop)
+DECISION: WSL2 Dev = Bridge-Files auf C:\temp\SwyxBridge\ kopieren (UNC-Pfad-Bug mit .NET Assembly-Caching)
 ```
 
 ### MUST
@@ -102,42 +107,63 @@ DECISION: Bridge-Prozess kill = taskkill /PID {pid} /F (nicht child.kill())
 
 ---
 
-## COM-API Referenz
+## COM-API Referenz (SDK-typisiert)
 
-### CLMgr Root-Objekt (`{f8e5536b-4c00-11d3-80bc-00105a653379}`)
-
-```
-DispNumberOfLines          Property  int (get)         ← NICHT Method!
-DispGetLine(int)           Method    IDispatch
-DispSelectedLine           Property  IDispatch (get)
-DispSelectedLineNumber     Property  int (get)
-DispSelectLineNumber(int)  Method    int
-DispSwitchToLineNumber(int) Method   int
-DispSetNumberOfLines(int)  Method    int
-DispSimpleDialEx3(string, int, int, string)  Method void
-DispClientConfig           Property  IDispatch (get)
-DispHookOn()               Method    void
-DispHookOff()              Method    void
-```
-
-### Line-Objekt (von DispGetLine / DispSelectedLine)
+### CLMgr Root-Objekt (`ClientLineMgrClass`, ProgID: `CLMgr.ClientLineMgr`)
 
 ```
-DispState                  Property  int (get)         ← 0=Inactive..15=DirectCall
-DispPeerName               Property  string (get)
-DispPeerNumber             Property  string (get)
-DispCallerName             Property  string (get)
-DispCallerNumber           Property  string (get)
-DispCallId                 Property  int (get)
-DispIsOutgoingCall         Property  int (get)
-DispConnectionStartTime    Property  Date (get)
-DispHookOn()               Method    void
-DispHookOff()              Method    void
-DispHold()                 Method    void
-DispActivate()             Method    void
-DispDial(string)           Method    void
-DispForwardCall(string)    Method    void
-DispSendDtmf(string,int)   Method    void
+DispInit(string)              Method    int       ← Standalone-Verbindung zum Server
+PubInit(string)               Method    void      ← Alternative Standalone-Init
+UnInit()                      Method    void      ← Verbindung trennen
+PubGetServerFromAutoDetection(...) Method void    ← Server auto-erkennen im Netzwerk
+DispNumberOfLines             Property  int (get)
+DispGetLine(int)              Method    object → IClientLineDisp
+DispSelectedLine              Property  object → IClientLineDisp (get)
+DispSelectedLineNumber        Property  int (get)
+DispSetNumberOfLines(int)     Method    int
+DispSimpleDialEx3(string, int, int, string)  Method uint
+DispClientConfig              Property  object (get) → dynamic cast nötig
+FulltextSearchInContactsEx(string, int, int, int, out object) Method int
+DispResolveNumber(string)     Method    string
+DispIsLoggedIn                Property  int (get)  ← 0=nein, 1=ja
+DispIsServerUp                Property  int (get)
+DispGetCurrentServer          Property  string (get)
+DispGetCurrentUser            Property  string (get)
+EnableNotifyUserAppearanceChanged() Method void
+```
+
+### Line-Objekt (`IClientLineDisp` — typed Interface)
+
+```
+DispState                     Property  int (get)  ← 0=Inactive..15=DirectCall
+DispDial(string)              Method    void
+DispHookOn()                  Method    void
+DispHookOff()                 Method    void
+DispHold()                    Method    void
+DispActivate()                Method    void
+DispForwardCall(string)       Method    void
+DispCalledName                Property  string (get)
+DispCallId                    Property  int (get)
+
+# ACHTUNG: Folgende Properties NICHT auf IClientLineDisp typed interface!
+# Müssen via dynamic cast gelesen werden: ((dynamic)line).DispPeerName
+DispPeerName                  Property  string (get)   ← nur via dynamic
+DispPeerNumber                Property  string (get)   ← nur via dynamic
+DispCallerName                Property  string (get)   ← nur via dynamic
+DispCallerNumber              Property  string (get)   ← nur via dynamic
+```
+
+### History (`CallerCollectionClass` / `CallerItemClass` — typed)
+
+```
+CallerItemClass.Name          Property  string
+CallerItemClass.Number        Property  string
+CallerItemClass.Time          Property  DateTime
+CallerItemClass.CallDuration  Property  int
+CallerItemClass.CallState     Property  int
+CallerItemClass.DialedNumber  Property  string
+CallerItemClass.DialedName    Property  string
+CallerItemClass.ConnectedName Property  string
 ```
 
 ### LineState Mapping (COM int → TypeScript string)
@@ -153,21 +179,22 @@ DispSendDtmf(string,int)   Method    void
  7 = Busy              15 = DirectCall
 ```
 
-### DispClientConfig (Präsenz)
+### DispClientConfig (Präsenz — via dynamic cast)
 
 ```
-cfg.Away                        Property  bool (get/set)
-cfg.DoNotDisturb                Property  bool (get/set)
-cfg.SetRichPresenceStatus(str)  Method    void
-cfg.PublicateDetectedAwayState(bool) Method void
-cfg.CallerEnumerator            Property  IEnumerable (get)  ← Anrufhistorie
-cfg.VoiceMessagesEnumerator     Property  IEnumerable (get)
-cfg.NumberOfNewVoicemails       Property  int (get)
+cfg.Away                        Property  bool (get/set)   ← dynamic
+cfg.DoNotDisturb                Property  bool (get/set)   ← dynamic
+cfg.SetRichPresenceStatus(str)  Method    void             ← dynamic
+cfg.PublicateDetectedAwayState(bool) Method void           ← dynamic
+cfg.CallerEnumerator            Property  IEnumerable (get)← dynamic
+cfg.VoiceMessagesEnumerator     Property  IEnumerable (get)← dynamic
+cfg.NumberOfNewVoicemails       Property  int (get)        ← dynamic
 ```
 
-### COM Events
+### COM Events (typed delegate)
 
 ```
+IClientLineMgrEventsPub_PubOnLineMgrNotificationEventHandler
 PubOnLineMgrNotification(int msg, int param)
   msg 0-3  → Leitungsstatus-Änderung
   msg 9    → Voicemail
@@ -190,24 +217,21 @@ SwyIt-byRalle1976/
 ├── tsconfig.json / .web.json / .node.json
 │
 ├── bridge/
-│   ├── SwyxBridge/               # C# COM Bridge (.NET 8)
-│   │   ├── Program.cs            # Entry: [STAThread] + Message-Pump
+│   ├── SwyxBridge/               # C# COM Bridge (.NET 8 + SDK v14.21.0)
+│   │   ├── SwyxBridge.csproj     # Swyx.Client.ClmgrAPI v14.21.0 NuGet
+│   │   ├── Program.cs            # Entry: [STAThread] + Message-Pump + connect/disconnect dispatch
 │   │   ├── Com/
-│   │   │   ├── SwyxConnector.cs  # COM-Verbindung und Lifecycle
-│   │   │   ├── LineManager.cs    # Multi-Line: Dial, Hangup, GetAllLines
-│   │   │   ├── EventSink.cs     # PubOnLineMgrNotification → JSON-RPC
-│   │   │   ├── StaDispatcher.cs  # STA-Thread Synchronisation
-│   │   │   └── WindowHook.cs    # 3-stufige Fensterunterdrückung + Dialog-Killer
+│   │   │   ├── SwyxConnector.cs  # Hybrid COM: ProgID + typed SDK cast + DispInit standalone
+│   │   │   ├── LineManager.cs    # Multi-Line: Dial, Hangup, GetAllLines (IClientLineDisp)
+│   │   │   └── EventSink.cs     # Typed PubOnLineMgrNotification → JSON-RPC
 │   │   ├── Handlers/
 │   │   │   ├── CallHandler.cs    # JSON-RPC → LineManager Routing
-│   │   │   ├── PresenceHandler.cs # Away/DND/Available via DispClientConfig
-│   │   │   ├── HistoryHandler.cs  # CallerEnumerator (Property "Time")
-│   │   │   ├── VoicemailHandler.cs
-│   │   │   └── ContactHandler.cs
+│   │   │   ├── PresenceHandler.cs # Away/DND/Available via dynamic DispClientConfig
+│   │   │   ├── HistoryHandler.cs  # Typed CallerCollectionClass/CallerItemClass
+│   │   │   ├── VoicemailHandler.cs # dynamic für VoiceMessages Enumeration
+│   │   │   └── ContactHandler.cs  # FulltextSearchInContactsEx (SDK-Methode)
 │   │   ├── JsonRpc/              # Request/Response/Emitter
-│   │   └── Utils/                # Logging
-│   ├── SwyxStandalone/           # Standalone Bridge (RegisterUserEx) [experimental]
-│   └── SwyxSpike/                # COM Connectivity Spike
+│   │   └── Utils/                # Logging, StaDispatcher
 │
 ├── src/
 │   ├── shared/
@@ -217,7 +241,7 @@ SwyIt-byRalle1976/
 │   │   ├── index.ts              # Electron main: Window, Bridge, Tray
 │   │   ├── tray.ts               # System Tray Integration
 │   │   ├── bridge/
-│   │   │   ├── BridgeManager.ts  # Spawnt SwyxBridge.exe, JSON-RPC I/O
+│   │   ├── BridgeManager.ts  # Spawnt SwyxBridge.exe, WSL2→Win copy, JSON-RPC I/O
 │   │   │   ├── BridgeProtocol.ts # JSON-RPC Framing
 │   │   │   └── BridgeReconnect.ts
 │   │   ├── ipc/handlers.ts       # IPC Main↔Renderer: dial, getLines, etc.
@@ -440,10 +464,12 @@ Dreistufige Eliminierung aller SwyxIt!-Fenster über `WindowHook.cs`:
 ## Umgebung
 
 - **SwyxIt! v14.25.8537.0** (Deutsch, On-Premises CPE)
+- **Swyx SDK**: `Swyx.Client.ClmgrAPI` v14.21.0 (NuGet, 291 exportierte Typen)
 - **Benutzer**: `Ralf.Arnold@oneqrew.com`, SiteID 1, EntityID 23
 - **Swyx Server**: `172.18.3.202` (intern, REST-Ports blockiert)
-- **CLMgr.exe**: `C:\Program Files (x86)\Swyx\SwyxIt!\CLMgr.exe` (headless, kein GUI)
-- **Entwicklung**: WSL2 + Windows, PowerShell-Interop für Bridge-Tests
+- **COM CLSID**: `{f8e552f8-4c00-11d3-80bc-00105a653379}` (CLMgr.ClientLineMgr)
+- **Entwicklung**: WSL2 + Windows, Bridge-Files auf `C:\temp\SwyxBridge\` kopiert
+- **WICHTIG**: `new ClientLineMgrClass()` hängt auf STA-Thread — NUR `Type.GetTypeFromProgID` + `Activator.CreateInstance` verwenden!
 
 ---
 

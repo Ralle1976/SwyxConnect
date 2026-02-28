@@ -29,8 +29,6 @@ static class Program
     private static VoicemailHandler? _voicemailHandler;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
-    private static System.Windows.Forms.Timer? _windowSuppressor;
-    private static WindowHook? _windowHook;
 
     [STAThread]
     static void Main(string[] args)
@@ -81,11 +79,9 @@ static class Program
 
         Logging.Info("Message Pump startet...");
         Application.Run(appCtx);
+
         // Cleanup
         Logging.Info("SwyxBridge beendet.");
-        _windowHook?.Dispose();
-        _windowSuppressor?.Stop();
-        _windowSuppressor?.Dispose();
         _heartbeat?.Stop();
         _rpcServer?.Stop();
         EventSink.Unsubscribe();
@@ -99,7 +95,7 @@ static class Program
 
         try
         {
-            _connector.Connect();
+            _connector.Connect();  // uses auto-detection (null = try PubGetServerFromAutoDetection first)
             Logging.Info("COM-Verbindung hergestellt.");
 
             // Handler erstellen (LineManager muss vor EventSink bereit sein)
@@ -132,37 +128,13 @@ static class Program
         };
         serverThread.Start();
 
-        // === SwyxIt!-Fensterunterdrückung ===
-
-        // 1. SetWinEventHook: Reagiert SOFORT auf Fenster-Events (kein Polling)
-        //    Muss auf STA-Thread mit Message Pump installiert werden (genau hier)
-        try
-        {
-            _windowHook = WindowHook.Install();
-            Logging.Info("WindowHook installiert — SwyxIt!-Fenster werden in Echtzeit versteckt.");
-        }
-        catch (Exception ex)
-        {
-            Logging.Warn($"WindowHook fehlgeschlagen: {ex.Message}. Nur Timer-Fallback aktiv.");
-        }
-
-        // 2. Timer-Fallback: fängt Fenster ab die dem Hook entgehen (z.B. Toasts, Popups)
-        //    Intervall: 500ms statt 1500ms für schnelleres Verstecken
-        _windowSuppressor = new System.Windows.Forms.Timer { Interval = 500 };
-        _windowSuppressor.Tick += (s, e) =>
-        {
-            _lineManager?.SuppressSwyxWindowPeriodic();
-            // PIDs aktualisieren falls SwyxIt! neu gestartet wurde
-            _windowHook?.RefreshSwyxPids();
-        };
-        _windowSuppressor.Start();
-        Logging.Info("SwyxIt!-Fensterunterdrückung: Hook + Timer-Fallback (500ms) aktiv.");
-
         // Connected-Status melden
         JsonRpcEmitter.EmitEvent("bridgeState", new
         {
             state = _connector.IsConnected ? "connected" : "disconnected"
         });
+
+        Logging.Info("SwyxBridge bereit (Standalone SDK Modus, kein SwyxIt!-Fenster-Management).");
     }
 
     /// <summary>
@@ -170,6 +142,46 @@ static class Program
     /// </summary>
     private static void DispatchRequest(JsonRpcRequest req)
     {
+        // Connection management (handled directly in Program.cs)
+        if (req.Method == "connect")
+        {
+            try
+            {
+                string? server = null;
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    if (req.Params.Value.TryGetProperty("serverName", out var sv))
+                        server = sv.GetString();
+                }
+                _connector?.Connect(server);
+                // Re-subscribe events after reconnect
+                if (_connector?.IsConnected == true && _lineManager != null)
+                    EventSink.Subscribe(_connector, _lineManager);
+                var info = _connector?.GetConnectionInfo() ?? new { connected = false };
+                if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, info);
+                JsonRpcEmitter.EmitEvent("bridgeState", new { state = _connector?.IsConnected == true ? "connected" : "disconnected" });
+            }
+            catch (Exception ex)
+            {
+                if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.ComError, ex.Message);
+            }
+            return;
+        }
+        if (req.Method == "getConnectionInfo")
+        {
+            var info = _connector?.GetConnectionInfo() ?? new { connected = false };
+            if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, info);
+            return;
+        }
+        if (req.Method == "disconnect")
+        {
+            EventSink.Unsubscribe();
+            _connector?.Disconnect();
+            if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new { ok = true });
+            JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected" });
+            return;
+        }
+
         if (_callHandler?.CanHandle(req.Method) == true)
         {
             _callHandler.Handle(req);
@@ -199,5 +211,5 @@ static class Program
                     $"Methode '{req.Method}' nicht gefunden.");
             }
         }
-    }
+}
 }

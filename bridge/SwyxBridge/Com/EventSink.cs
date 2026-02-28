@@ -1,3 +1,4 @@
+using IpPbx.CLMgrLib;
 using SwyxBridge.JsonRpc;
 using SwyxBridge.Utils;
 
@@ -7,11 +8,14 @@ namespace SwyxBridge.Com;
 /// Event-Sink für CLMgr PubOnLineMgrNotification Events.
 /// Schickt bei Leitungsänderungen sofort die aktuellen Leitungsdaten mit (lineStateChanged).
 /// CRITICAL: Instanz MUSS in einem static Feld gehalten werden.
+/// Verwendet typisiertes Delegate: IClientLineMgrEventsPub_PubOnLineMgrNotificationEventHandler
 /// </summary>
 public sealed class EventSink
 {
     private static EventSink? _staticInstance;
-    private static Action<int, int>? _staticDelegate;
+
+    // CRITICAL: Typed delegate MUSS als static Feld gehalten werden (GC-Schutz)
+    private static IClientLineMgrEventsPub_PubOnLineMgrNotificationEventHandler? _staticDelegate;
 
     private readonly SwyxConnector _connector;
     private readonly LineManager _lineManager;
@@ -28,7 +32,10 @@ public sealed class EventSink
 
         var sink = new EventSink(connector, lineManager);
         _staticInstance = sink;
-        _staticDelegate = sink.OnLineMgrNotification;
+
+        // Typisierter Delegate — kein dynamic cast nötig
+        _staticDelegate = new IClientLineMgrEventsPub_PubOnLineMgrNotificationEventHandler(
+            sink.OnLineMgrNotification);
 
         var com = connector.GetCom();
         if (com == null)
@@ -36,8 +43,8 @@ public sealed class EventSink
 
         try
         {
-            ((dynamic)com).PubOnLineMgrNotification += _staticDelegate;
-            Logging.Info("EventSink: Registriert für PubOnLineMgrNotification.");
+            com.PubOnLineMgrNotification += _staticDelegate;
+            Logging.Info("EventSink: Registriert für PubOnLineMgrNotification (typisiert).");
         }
         catch (Exception ex)
         {
@@ -58,7 +65,7 @@ public sealed class EventSink
         {
             var com = _staticInstance._connector.GetCom();
             if (com != null)
-                ((dynamic)com).PubOnLineMgrNotification -= _staticDelegate;
+                com.PubOnLineMgrNotification -= _staticDelegate;
             Logging.Info("EventSink: Abgemeldet.");
         }
         catch (Exception ex)

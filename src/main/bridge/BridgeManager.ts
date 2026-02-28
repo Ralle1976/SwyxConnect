@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { ChildProcess, spawn } from 'child_process';
 import * as readline from 'readline';
 import * as path from 'path';
+import * as fs from 'fs';
 import { app } from 'electron';
 import {
   BridgeState,
@@ -43,15 +44,39 @@ export class BridgeManager extends EventEmitter {
   private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private lastHeartbeat = 0;
   private isShuttingDown = false;
+  private _resolvedBridgePath: string | null = null;
 
   private get bridgePath(): string {
+    if (this._resolvedBridgePath) return this._resolvedBridgePath;
+
     if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'SwyxBridge.exe');
+      this._resolvedBridgePath = path.join(process.resourcesPath, 'SwyxBridge.exe');
+      return this._resolvedBridgePath;
     }
+
     // Dev mode: app.getAppPath() = .../out/main, bridge is at .../out/bridge/
     const appDir = app.getAppPath();
-    const outDir = path.dirname(appDir); // go from out/main → out/
-    return path.join(outDir, 'bridge', 'SwyxBridge.exe');
+    const outDir = path.dirname(appDir);
+    const bridgeDir = path.join(outDir, 'bridge');
+    const bridgeExe = path.join(bridgeDir, 'SwyxBridge.exe');
+
+    // WSL2 fix: .NET loads stale/cached assemblies from UNC paths (\\wsl.localhost\...)
+    // Copy bridge files to a Windows-native temp directory for reliable loading
+    try {
+      const winTempDir = '/mnt/c/temp/SwyxBridge';
+      fs.mkdirSync(winTempDir, { recursive: true });
+      for (const file of fs.readdirSync(bridgeDir)) {
+        fs.copyFileSync(path.join(bridgeDir, file), path.join(winTempDir, file));
+      }
+      this._resolvedBridgePath = path.join(winTempDir, 'SwyxBridge.exe');
+      console.log(`[Bridge] Copied to Windows path: ${this._resolvedBridgePath}`);
+      return this._resolvedBridgePath;
+    } catch {
+      // Fallback: use original WSL path (may cause stale assembly issues)
+      console.warn('[Bridge] Failed to copy to Windows path, using WSL path');
+      this._resolvedBridgePath = bridgeExe;
+      return this._resolvedBridgePath;
+    }
   }
 
   start(): void {

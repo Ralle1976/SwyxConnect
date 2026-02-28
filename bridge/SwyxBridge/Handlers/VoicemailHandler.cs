@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IpPbx.CLMgrLib;
 using SwyxBridge.Com;
 using SwyxBridge.JsonRpc;
 using SwyxBridge.Utils;
@@ -10,6 +11,11 @@ namespace SwyxBridge.Handlers;
 ///
 /// VoiceMessagesEnumerator liefert eine IDispatch Collection mit Voicemail-Einträgen.
 /// DispClientConfig.NumberOfNewVoicemails → Anzahl neuer/ungelesener Nachrichten.
+///
+/// HINWEIS: DispClientConfig wird als dynamic gehalten, da VoiceMessagesEnumerator
+/// und NumberOfNewVoicemails nicht auf einem standardisierten COM-Interface liegen.
+/// InvokeVoicemailAction() und DispVoicemailRemoteInquiry() sind ebenfalls nicht
+/// im typed interface — dynamic cast erforderlich.
 ///
 /// Fallback:
 ///   - InvokeVoicemailAction() → Öffnet Standard-Mail-Client
@@ -65,6 +71,8 @@ public sealed class VoicemailHandler
         int newCount = 0;
 
         // Versuch 1: DispClientConfig für Voicemails
+        // dynamic cfg: VoiceMessagesEnumerator und NumberOfNewVoicemails sind nicht
+        // im typed COM-Interface des SDKs verfügbar — dynamic Zugriff nötig.
         try
         {
             dynamic cfg = com.DispClientConfig;
@@ -133,7 +141,7 @@ public sealed class VoicemailHandler
             {
                 dynamic item = vmEnum.Item(i);
 
-                string callerName = TryGetString(item, "CallerName", "Name", "DispCallerName", "SenderName") ?? "";
+                string callerName   = TryGetString(item, "CallerName", "Name", "DispCallerName", "SenderName") ?? "";
                 string callerNumber = TryGetString(item, "CallerNumber", "Number", "DispCallerNumber", "SenderNumber") ?? "";
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 int duration = 0;
@@ -151,10 +159,7 @@ public sealed class VoicemailHandler
                 catch { }
 
                 // Dauer
-                try
-                {
-                    duration = TryGetInt(item, "Duration", "DispDuration", "MessageDuration");
-                }
+                try { duration = TryGetInt(item, "Duration", "DispDuration", "MessageDuration"); }
                 catch { }
 
                 // IsNew / IsRead
@@ -193,7 +198,8 @@ public sealed class VoicemailHandler
 
         try
         {
-            com.InvokeVoicemailAction();
+            // InvokeVoicemailAction ist nicht im typed interface — dynamic cast
+            ((dynamic)com).InvokeVoicemailAction();
             Logging.Info("VoicemailHandler: InvokeVoicemailAction aufgerufen.");
             return new { ok = true };
         }
@@ -211,7 +217,8 @@ public sealed class VoicemailHandler
 
         try
         {
-            com.DispVoicemailRemoteInquiry();
+            // DispVoicemailRemoteInquiry ist nicht im typed interface — dynamic cast
+            ((dynamic)com).DispVoicemailRemoteInquiry();
             Logging.Info("VoicemailHandler: DispVoicemailRemoteInquiry aufgerufen.");
             return new { ok = true };
         }
@@ -222,7 +229,7 @@ public sealed class VoicemailHandler
         }
     }
 
-    // ─── COM Property Helper ─────────────────────────────────────────────────
+    // ─── COM Property Helper (für untypisierte Voicemail-Items) ─────────────
 
     private static string? TryGetString(dynamic item, params string[] names)
     {

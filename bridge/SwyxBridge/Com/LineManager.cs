@@ -1,5 +1,4 @@
-using System.Diagnostics;
-using System.Runtime.InteropServices;
+using IpPbx.CLMgrLib;
 using SwyxBridge.Utils;
 
 namespace SwyxBridge.Com;
@@ -7,21 +6,11 @@ namespace SwyxBridge.Com;
 /// <summary>
 /// Wrapper um die CLMgr Dispatch-Methoden.
 /// Alle Methoden MÜSSEN auf dem STA-Thread aufgerufen werden.
+/// Verwendet typisierte IClientLineDisp / ClientLineMgrClass statt dynamic.
 /// </summary>
 public sealed class LineManager
 {
     private readonly SwyxConnector _connector;
-
-    // Win32 API zum Unterdrücken des SwyxIt!-Fensters
-    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
-
-    private const int SW_HIDE = 0;
-    private const int SW_MINIMIZE = 6;
-    private const int SW_SHOWMINNOACTIVE = 7;
 
     public LineManager(SwyxConnector connector)
     {
@@ -42,7 +31,7 @@ public sealed class LineManager
             if (com == null) return;
 
             int current = 0;
-            try { current = (int)com.DispNumberOfLines; } catch { }
+            try { current = com.DispNumberOfLines; } catch { }
 
             if (current == 0)
             {
@@ -50,7 +39,7 @@ public sealed class LineManager
                 try
                 {
                     com.DispSetNumberOfLines(2);
-                    int afterSet = (int)com.DispNumberOfLines;
+                    int afterSet = com.DispNumberOfLines;
                     Logging.Info($"LineManager: Nach DispSetNumberOfLines → {afterSet} Leitungen.");
                 }
                 catch (Exception ex)
@@ -69,16 +58,20 @@ public sealed class LineManager
         }
     }
 
-    private dynamic GetCom() =>
+    private ClientLineMgrClass GetCom() =>
         _connector.GetCom() ?? throw new InvalidOperationException("COM nicht verbunden.");
 
-    private dynamic GetLine(int lineId)
+    /// <summary>
+    /// Gibt eine typisierte Leitung per Index zurück.
+    /// Fällt zurück auf DispSelectedLine wenn DispGetLine fehlschlägt.
+    /// </summary>
+    private IClientLineDisp GetLine(int lineId)
     {
         var com = GetCom();
         try
         {
-            var line = com.DispGetLine(lineId);
-            if (line != null) return line;
+            var lineObj = com.DispGetLine(lineId);
+            if (lineObj is IClientLineDisp line) return line;
         }
         catch (Exception ex)
         {
@@ -87,8 +80,8 @@ public sealed class LineManager
         // Fallback: DispSelectedLine
         try
         {
-            var sel = com.DispSelectedLine;
-            if (sel != null) return sel;
+            var selObj = com.DispSelectedLine;
+            if (selObj is IClientLineDisp sel) return sel;
         }
         catch { }
         throw new InvalidOperationException($"Leitung {lineId} nicht verfügbar.");
@@ -112,32 +105,16 @@ public sealed class LineManager
         }
     }
 
-    // --- Periodische Fensterunterdrückung ---
-
-    /// <summary>
-    /// Wird per Timer aufgerufen. Prüft ob SwyxIt!-Fenster im Vordergrund
-    /// ist und minimiert es automatisch.
-    /// </summary>
-    public void SuppressSwyxWindowPeriodic()
-    {
-        // Delegiere an SwyxConnector — findet ALLE Fenster via EnumWindows + SW_HIDE
-        SwyxConnector.HideAllSwyxItWindows();
-    }
-
     // --- Anruf-Steuerung ---
 
     public void Dial(string number)
     {
         Logging.Info($"LineManager: Dial({number})");
 
-        // Merke aktuelles Vordergrund-Fenster (unser Electron-Fenster)
-        var ourWindow = GetForegroundWindow();
-
         try
         {
             // Versuche zuerst DispSimpleDialEx3 mit Line-Flag 0 (= aktuelle Leitung)
             // Parameter: (Nummer, LineId, Flags, CallerInfo)
-            // Manche Swyx-Versionen unterstützen dies ohne UI-Popup
             try
             {
                 GetCom().DispSimpleDialEx3(number, 0, 0, "");
@@ -146,15 +123,15 @@ public sealed class LineManager
             catch
             {
                 // Fallback: DispDial über ausgewählte Leitung
-                var selectedLine = GetCom().DispSelectedLine;
-                if (selectedLine != null)
+                var selObj = GetCom().DispSelectedLine;
+                if (selObj is IClientLineDisp selectedLine)
                 {
                     selectedLine.DispDial(number);
                 }
                 else
                 {
-                    var fallbackLine = GetCom().DispGetLine(0);
-                    if (fallbackLine != null)
+                    var lineObj = GetCom().DispGetLine(0);
+                    if (lineObj is IClientLineDisp fallbackLine)
                     {
                         fallbackLine.DispDial(number);
                     }
@@ -165,9 +142,6 @@ public sealed class LineManager
                     }
                 }
             }
-
-            // CRITICAL: SwyxIt!-Fenster sofort unterdrücken
-            SuppressSwyxWindow(ourWindow);
         }
         catch (Exception ex)
         {
@@ -181,8 +155,8 @@ public sealed class LineManager
         // Versuch 1: DispSelectedLine.DispHookOn()
         try
         {
-            var selectedLine = GetCom().DispSelectedLine;
-            if (selectedLine != null)
+            var selObj = GetCom().DispSelectedLine;
+            if (selObj is IClientLineDisp selectedLine)
             {
                 selectedLine.DispHookOn();
                 Logging.Info("LineManager: Hangup via DispSelectedLine.DispHookOn()");
@@ -193,11 +167,15 @@ public sealed class LineManager
         {
             Logging.Warn($"LineManager: DispSelectedLine.DispHookOn() fehlgeschlagen: {ex.Message}");
         }
-        // Versuch 2: GetCom().DispHookOn() direkt
+        // Versuch 2: Erste Leitung hängig auflegen
         try
         {
-            GetCom().DispHookOn();
-            Logging.Info("LineManager: Hangup via GetCom().DispHookOn()");
+            var lineObj = GetCom().DispGetLine(0);
+            if (lineObj is IClientLineDisp line)
+            {
+                line.DispHookOn();
+                Logging.Info("LineManager: Hangup via Line(0).DispHookOn()");
+            }
         }
         catch (Exception ex)
         {
@@ -239,7 +217,7 @@ public sealed class LineManager
 
     public int GetLineCount()
     {
-        try { return (int)GetCom().DispNumberOfLines; }
+        try { return GetCom().DispNumberOfLines; }
         catch (Exception ex)
         {
             Logging.Warn($"LineManager: DispNumberOfLines fehlgeschlagen: {ex.Message}");
@@ -249,7 +227,7 @@ public sealed class LineManager
 
     public int GetSelectedLineId()
     {
-        try { return (int)GetCom().DispSelectedLineNumber; }
+        try { return GetCom().DispSelectedLineNumber; }
         catch (Exception ex)
         {
             Logging.Warn($"LineManager: DispSelectedLineNumber fehlgeschlagen: {ex.Message}");
@@ -259,7 +237,7 @@ public sealed class LineManager
 
     public int GetLineState(int lineId)
     {
-        try { return (int)GetLine(lineId).DispState; }
+        try { return GetLine(lineId).DispState; }
         catch (Exception ex)
         {
             Logging.Warn($"LineManager: GetLineState({lineId}) fehlgeschlagen: {ex.Message}");
@@ -320,18 +298,14 @@ public sealed class LineManager
         {
             try
             {
-                var sel = GetCom().DispSelectedLine;
-                if (sel != null)
+                var selObj = GetCom().DispSelectedLine;
+                if (selObj is IClientLineDisp sel)
                 {
                     int stateInt = 0;
                     string callerName = "", callerNumber = "";
-                    try { stateInt = (int)sel.DispState; } catch { }
-                    try { callerName = (string)(sel.DispCallerName ?? ""); } catch { }
-                    if (string.IsNullOrEmpty(callerName))
-                        try { callerName = (string)(sel.DispPeerName ?? ""); } catch { }
-                    try { callerNumber = (string)(sel.DispCallerNumber ?? ""); } catch { }
-                    if (string.IsNullOrEmpty(callerNumber))
-                        try { callerNumber = (string)(sel.DispPeerNumber ?? ""); } catch { }
+                    try { stateInt = sel.DispState; } catch { }
+                    try { callerName = sel.DispPeerName ?? ""; } catch { }
+                    try { callerNumber = sel.DispPeerNumber ?? ""; } catch { }
 
                     lines.Add(new
                     {
@@ -366,13 +340,9 @@ public sealed class LineManager
             string callerName = "";
             string callerNumber = "";
 
-            try { stateInt = (int)line.DispState; } catch { }
-            try { callerName = (string)(line.DispCallerName ?? ""); } catch { }
-            if (string.IsNullOrEmpty(callerName))
-                try { callerName = (string)(line.DispPeerName ?? ""); } catch { }
-            try { callerNumber = (string)(line.DispCallerNumber ?? ""); } catch { }
-            if (string.IsNullOrEmpty(callerNumber))
-                try { callerNumber = (string)(line.DispPeerNumber ?? ""); } catch { }
+            try { stateInt = line.DispState; } catch { }
+            try { callerName = line.DispPeerName ?? ""; } catch { }
+            try { callerNumber = line.DispPeerNumber ?? ""; } catch { }
 
             return new
             {
@@ -398,13 +368,9 @@ public sealed class LineManager
         try
         {
             var line = GetLine(lineId);
-            try { stateInt = (int)line.DispState; } catch { }
-            try { callerName = (string)(line.DispCallerName ?? ""); } catch { }
-            if (string.IsNullOrEmpty(callerName))
-                try { callerName = (string)(line.DispPeerName ?? ""); } catch { }
-            try { callerNumber = (string)(line.DispCallerNumber ?? ""); } catch { }
-            if (string.IsNullOrEmpty(callerNumber))
-                try { callerNumber = (string)(line.DispPeerNumber ?? ""); } catch { }
+            try { stateInt = line.DispState; } catch { }
+            try { callerName = line.DispPeerName ?? ""; } catch { }
+            try { callerNumber = line.DispPeerNumber ?? ""; } catch { }
         }
         catch (Exception ex)
         {
@@ -418,45 +384,5 @@ public sealed class LineManager
             callerNumber,
             isSelected   = true
         };
-    }
-
-    // --- Window-Suppression ---
-
-    /// <summary>
-    /// Unterdrückt das SwyxIt!-Fenster nach einem Dial-Vorgang.
-    /// Verwendet schnellen Timer statt Thread.Sleep um die Message Pump nicht zu blockieren.
-    /// </summary>
-    private void SuppressSwyxWindow(IntPtr previousForeground)
-    {
-        // Sofort einmal verstecken
-        SwyxConnector.HideAllSwyxItWindows();
-
-        // Schnellen Timer starten: 20x alle 100ms = 2 Sekunden aggressive Unterdrückung
-        int remaining = 20;
-        var timer = new System.Windows.Forms.Timer { Interval = 100 };
-        timer.Tick += (s, e) =>
-        {
-            SwyxConnector.HideAllSwyxItWindows();
-            remaining--;
-
-            if (remaining <= 0)
-            {
-                timer.Stop();
-                timer.Dispose();
-
-                // Am Ende: unser Fenster nach vorne
-                if (previousForeground != IntPtr.Zero)
-                {
-                    try
-                    {
-                        var currentForeground = GetForegroundWindow();
-                        if (currentForeground != previousForeground)
-                            SetForegroundWindow(previousForeground);
-                    }
-                    catch { }
-                }
-            }
-        };
-        timer.Start();
     }
 }
