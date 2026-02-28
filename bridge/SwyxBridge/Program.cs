@@ -253,6 +253,38 @@ static class Program
             return;
         }
 
+        // --- CDS WCF Login Probe ---
+        if (req.Method == "probeCds")
+        {
+            try
+            {
+                string? host = "127.0.0.1", username = null, password = null;
+                int port = 9094;
+
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var p = req.Params.Value;
+                    if (p.TryGetProperty("host", out var h)) host = h.GetString();
+                    if (p.TryGetProperty("port", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) port = pt.GetInt32();
+                    if (p.TryGetProperty("username", out var un)) username = un.GetString();
+                    if (p.TryGetProperty("password", out var pw)) password = pw.GetString();
+                }
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        using var client = new CdsLoginClient(host ?? "127.0.0.1", port);
+                        var result = client.FullProbe(username, password);
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, result);
+                    }
+                    catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
+        }
+
         // --- Handler Dispatch ---
         if (_callHandler?.CanHandle(req.Method) == true) { _callHandler.Handle(req); }
         else if (_presenceHandler?.CanHandle(req.Method) == true) { _presenceHandler.Handle(req); }

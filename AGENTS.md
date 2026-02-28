@@ -75,7 +75,7 @@
 
 ### Plattform
 
-- **Nur Windows x64** — kein ARM64, kein macOS, kein Linux
+- **Nur Windows x86 (32-Bit)** — kein x64, kein ARM64, kein macOS, kein Linux (CLMgr COM ist 32-Bit)
 - **Swyx Client SDK v14.21.0** — NuGet-Paket `Swyx.Client.ClmgrAPI`
 - **Standalone oder Attach**: SDK verbindet sich direkt zum Server via `DispInit()` oder nutzt laufende SwyxIt!-Session
 ---
@@ -85,11 +85,14 @@
 ```
 DECISION: IPC = Newline-delimited JSON mit JSON-RPC 2.0 Envelope
 DECISION: C# Bridge = [STAThread] + Application.Run() Message-Pump (WinForms-Dependency)
-DECISION: Ship x64 Windows only. Kein ARM64, kein macOS, kein Linux.
+DECISION: Ship x86 Windows only (32-Bit wegen CLMgr COM)
 DECISION: Bridge-Prozess kill = taskkill /PID {pid} /F (nicht child.kill())
 DECISION: COM-Erstellung = Type.GetTypeFromProgID + Activator.CreateInstance, NICHT new ClientLineMgrClass() (hängt auf STA)
 DECISION: SDK NuGet = Swyx.Client.ClmgrAPI v14.21.0 (typed COM interop)
 DECISION: WSL2 Dev = Bridge-Files auf C:\temp\SwyxBridge\ kopieren (UNC-Pfad-Bug mit .NET Assembly-Caching)
+DECISION: Standalone-Architektur = SIP-UA (SIPSorcery) + CDS WCF Client + eigener Kestrel-Host
+DECISION: CDS-Verbindung = WCF net.tcp auf Port 9094, Login via ConfigDataStore/CLoginImpl.none
+DECISION: Auth-Modus = JWT (JasonWebToken) nach AcquireToken mit Username/Password
 ```
 
 ### MUST
@@ -478,3 +481,177 @@ Dreistufige Eliminierung aller SwyxIt!-Fenster über `WindowHook.cs`:
 - [Swyx Client SDK](https://clientsdk.swyx.engineering/)
 - [CLMgrPubTypes.h](https://clientsdk.swyx.engineering/_c_l_mgr_pub_types_8h.html)
 - [Swyx CPE Hilfe](https://help.enreach.com/cpe/14.25/App/Swyx/de-DE/index.html)
+
+---
+
+## Standalone-Architektur (OHNE SwyxIt!.exe)
+
+### Überblick
+
+SwyxConnect soll langfristig ohne SwyxIt!.exe funktionieren. Stattdessen:
+- **Eigener Kestrel-Host** mit SignalR Hubs (`/hubs/swyxit`, `/hubs/comsocket`)
+- **SIPSorcery v10.0.3** als SIP-UA für REGISTER/INVITE/BYE
+- **WCF-Client** für CDS (Configuration Data Store) auf net.tcp Port 9094
+- **JSON-RPC** Methoden: `startStandaloneHost`, `stopStandaloneHost`, `getStandaloneHostStatus`, `probeNetwork`
+
+### Standalone-Dateien
+
+```
+bridge/SwyxBridge/Standalone/
+├── Interfaces.cs              # DI-Interfaces: ILineManagerProvider, ILineManagerFacade, IClientConfig, etc.
+├── SipLineManagerProvider.cs   # In-Memory Line Management + SipClientConfig
+├── SipUserAgent.cs            # SIPSorcery SIP UA Wrapper (REGISTER, INVITE, BYE)
+├── StandaloneKestrelHost.cs   # ASP.NET Core Kestrel + DI + SignalR Hubs
+├── StubServices.cs            # Stub-Implementierungen für Phase 1
+├── SwyxConnectHub.cs          # SignalR Hub + ComSocket-Compat Hub
+└── NetworkProbe.cs            # 359 Zeilen, TCP/UDP/SIP/HTTPS/WCF/RemoteConnector-Analyse
+```
+
+### CDS-Protokoll (aus Decompilation IpPbxCDSClientLib.dll)
+
+#### Transport
+- **Protokoll**: WCF `net.tcp` Binding
+- **Standard-Port**: 9094 (CDS), 9100 (Windows-Login)
+- **Lokal**: `net.pipe://localhost/ConfigDataStore/...` (Named Pipes)
+- **Remote**: `net.tcp://{host}:9094/ConfigDataStore/...`
+
+#### Authentifizierungs-Modi (URL-Suffixe)
+```
+Kerberos/Trusted/TrustedLocal/TrustedPlain → .wnd
+UsernamePassword                           → .upwd
+Plain                                      → .wupwd
+JasonWebToken (JWT)                        → .jwt2
+```
+
+#### Login-Flow
+1. Login-Channel erstellen: `net.tcp://{host}:9094/ConfigDataStore/CLoginImpl.none`
+   - NetTcpBinding, SecurityMode=Transport, TcpClientCredentialType=None
+   - ProtectionLevel=EncryptAndSign
+   - EndpointIdentity: DNS "IpPbx"
+   - Zertifikat: SCertificateManager.CertificateValidator (custom X509)
+2. `ILogin.AcquireToken(Credentials{UserName, Password})` → `AuthenticationResult{AccessToken, RefreshToken, UserId}`
+3. AccessToken wird als JWT in allen weiteren Anfragen verwendet
+4. Refresh: `ILogin.RefreshToken(refreshToken)` → neues `AuthenticationResult`
+5. Weitere Operationen: AuthenticationMode=JasonWebToken, URL-Suffix=`.jwt2`
+
+#### Windows-Login (Port 9100)
+- WSHttpBinding, SecurityMode=TransportWithMessageCredential
+- URL: `https://{host}:9100/ippbx/CLoginWindowsImpl`
+- MessageCredentialType=Windows (NTLM/Kerberos)
+- EstablishSecurityContext=false, NegotiateServiceCredential=false
+
+#### CDS Service-Endpunkte
+```
+ConfigDataStore/CLoginImpl                  (Login, AcquireToken, RefreshToken)
+ConfigDataStore/CPhoneClientFacadeImpl       (Phone Client Operations)
+ConfigDataStore/CCallbackFacadeImpl           (Change Notifications, Subscriptions)
+ConfigDataStore/CUserEnumImpl                 (User Management)
+ConfigDataStore/CGlobalConfigEnumImpl          (Global Config, RemoteConnector Config)
+ConfigDataStore/CAdminFacadeImpl               (Admin Operations)
+ConfigDataStore/CIppbxServerFacadeImpl         (Server Operations)
+ConfigDataStore/CFilesFacadeImpl               (File Operations)
+ConfigDataStore/CPublicNumberEnumImpl          (Public Numbers)
+ConfigDataStore/CInternalNumberEnumImpl        (Internal Numbers)
+ConfigDataStore/CPortManagerFacadeImpl          (Port Manager)
+ConfigDataStore/CGroupEnumImpl                  (Groups)
+ConfigDataStore/CLocationEnumImpl               (Locations)
+ConfigDataStore/CFeatureProfileEnumImpl         (Feature Profiles)
+ConfigDataStore/CUserPhoneBookEnumImpl           (Phone Book)
+ConfigDataStore/CEditablePhonebookEnumImpl       (Editable Phone Book)
+ConfigDataStore/CDcfFacadeImpl                   (DCF)
+ConfigDataStore/CReportingFacadeImpl             (Reporting)
+ConfigDataStore/CRoleEnumImpl                    (Security Roles)
+```
+
+#### ILogin WCF-Interface (vollständig)
+```csharp
+interface ILogin {
+  void Ping();
+  string[] GetSupportedClientVersions();
+  void CheckVersion();
+  UserCredentialsAuthenticationResult Login(Credentials credentials);
+  AuthenticationResult AcquireToken(Credentials credentials);
+  FirstFactorAuthenticationResult AcquireFirstFactorToken(Credentials credentials);
+  AuthenticationResult AcquireTokenByTwoFactors(TwoFactorCredentials credentials);
+  AuthenticationResult RefreshToken(string token);
+  ValidateAccessTokenResponse ValidateAccessToken(ValidateAccessTokenRequest request);
+  FederatedAccessTokenValidationResult GetFederatedAccessTokenValidationResult(string accessToken);
+  TenantFederationInfo GetTenantInfo();
+  UserPasswordResetRequestResult CreateUserPasswordResetRequest(...);
+}
+```
+
+#### RemoteConnector-Konfiguration
+```csharp
+class TRemoteConnectorConfig {
+  TEndPoint AuthenticationEndpoint;       // z.B. RC0321.axxess.de:8021
+  TEndPoint AuthenticationFallbackEndpoint;
+  TEndPoint ConnectorEndpoint;            // z.B. RC0321.axxess.de:15021
+  TEndPoint ConnectorFallbackEndpoint;
+  bool Enabled;
+  int CertificateMode;
+  bool SystemManagedCertificateSecurity;
+  string RootCertificateThumbprint;
+  string ServerCertificateThumbprint;
+  string ClientCertificateThumbprint;
+}
+
+class TEndPoint {
+  string Protocol;  // "https", "net.tcp"
+  string Host;      // Server-Hostname
+  string Path;      // URL-Pfad
+  int Port;         // Port-Nummer
+}
+```
+
+#### TenantInfo (aus ComSocket)
+```csharp
+class TenantInfo {
+  int TenantId;
+  int UserId;
+  string ClientID;
+  string TenantDomain;
+  string AppUriId;
+  string ConnectorEndpoint;      // RemoteConnector tunnel
+  int[] ConnectorPorts;
+  string FallbackConnectorEndpoint;
+  string AuthenticationEndpoint;  // RemoteConnector auth
+  int[] AuthenticationPorts;
+  string OemId;
+  bool TwoFactorAuthEnabledRequired;
+  string TenantAuthenticationDomain;
+  string TenantName;
+  string UserPasswordResetUrl;
+}
+```
+
+### Netzwerk-Probe Ergebnisse
+
+#### CLMgr lokale Ports (bei laufendem SwyxIt!)
+| Port | Protokoll | Status |
+|------|-----------|--------|
+| 9094/TCP | CDS (WCF net.tcp) | OPEN — kein Standard-WCF-Preamble |
+| 9100/TCP | Windows-Login (WSHttp) | OPEN |
+| 5060/UDP | SIP (CLMgr Proxy) | OPEN — ignoriert OPTIONS |
+| 5070/UDP | SIP (extern) | OPEN |
+| 40000-40009/UDP | RTP Media | OPEN (10 Kanäle) |
+| 12042/TCP | Unbekannt | OPEN |
+
+#### CLMgr Tunnel-Verbindung
+```
+TCP 192.168.178.130:65054 → 193.192.0.54:15021 (RemoteConnector Tunnel)
+CLMgr exponiert lokal: CDS auf :9094, SIP auf :5060, RTP auf :40000-40009
+```
+
+#### Öffentlicher Server (RC0321.axxess.de)
+| Port | Status | Befund |
+|------|--------|--------|
+| 15021/TCP | OPEN | Proprietärer Tunnel — kein TLS, kein SIP |
+| 8021/TCP | OPEN | Microsoft-HTTPAPI/2.0, /IpPbx/* → 503 |
+
+### Nächste Schritte (Standalone)
+
+1. **CDS WCF Login implementieren** — net.tcp auf localhost:9094, AcquireToken mit Username/Password
+2. **SIP REGISTER durch CLMgr** — SIP auf localhost:5060 nach erfolgreicher CDS-Authentifizierung
+3. **RemoteConnector Auth** — HTTPS auf :8021, danach TCP Tunnel auf :15021 (für Zugang ohne VPN)
+4. **Electron Frontend** an SignalR Hubs anbinden

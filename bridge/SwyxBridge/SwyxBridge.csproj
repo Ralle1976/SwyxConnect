@@ -17,6 +17,8 @@
     <PackageReference Include="SIPSorcery" Version="10.0.3" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.*" />
     <PackageReference Include="System.Text.Json" Version="8.*" />
+    <PackageReference Include="System.ServiceModel.NetTcp" Version="8.*" />
+    <PackageReference Include="System.ServiceModel.Security" Version="6.*" />
   </ItemGroup>
 
   <!-- ASP.NET Core + SignalR für Standalone-Kestrel-Host -->
