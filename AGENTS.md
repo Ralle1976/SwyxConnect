@@ -302,37 +302,46 @@ node scripts/test-bridge.mjs
 ```
 Spawnt Bridge über `powershell.exe`, sendet JSON-RPC Requests, prüft Responses.
 
-### Linux Dev-Environment (WICHTIG — FÜR AGENTEN)
+### WSL2 Dev-Environment (WICHTIG — FÜR AGENTEN)
 
-Auf dem Linux Dev-Server (kein Windows, kein COM) kann die App trotzdem
-gestartet und die UI getestet werden. Bridge wird nicht verbinden, aber UI läuft.
+Die Entwicklungsumgebung läuft auf **WSL2 (Ubuntu)**. Windows-Interop ist aktiv:
+- SwyxIt!.exe + CLMgr.exe laufen auf der Windows-Seite
+- SwyxBridge.exe (Windows .NET 8) wird von WSL2 direkt gestartet
+- Electron läuft auf dem WSLg-Display (:0)
+
+**VOLLSTÄNDIGE STARTPROZEDUR:**
 
 ```bash
-# Projekt auschecken (falls nicht vorhanden)
+# 1. Projekt (falls nicht vorhanden)
 gh repo clone Ralle1976/SwyxConnect /tmp/SwyxConnect
 cd /tmp/SwyxConnect
 
-# Dependencies installieren + bauen
+# 2. Dependencies
 npm install
+npm install ws --no-save   # für CDP-Screenshots
+
+# 3. Electron-App bauen
 npx electron-vite build
 
-# App starten (DISPLAY=:0 ist gesetzt, GPU deaktivieren wegen headless)
+# 4. C# Bridge für Windows cross-kompilieren
+export PATH="$HOME/.dotnet:$PATH"
+dotnet publish bridge/SwyxBridge/SwyxBridge.csproj -c Release -r win-x64 --self-contained false -o out/bridge
+
+# 5. Prüfen ob SwyxIt! + CLMgr auf Windows laufen
+powershell.exe -Command "Get-Process 'SwyxIt!','CLMgr' -ErrorAction SilentlyContinue | Select Id,ProcessName"
+
+# 6. App starten (Bridge verbindet automatisch mit CLMgr via COM)
+pkill -f electron 2>/dev/null
 DISPLAY=:0 npx electron out/main/index.js --disable-gpu --no-sandbox --remote-debugging-port=9222 &
+sleep 6
 
-# Screenshot via CDP (Chrome DevTools Protocol)
-# 1. Warten bis App bereit:
-curl -s http://localhost:9222/json/list  # zeigt Page-ID
-
-# 2. Screenshot via Node.js + WebSocket:
-npm install ws --no-save
+# 7. Screenshot via CDP
+PAGE_ID=$(curl -s http://localhost:9222/json/list | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d)[0].id))")
 node -e "
 const WebSocket = require('ws');
 const fs = require('fs');
-// Page-ID aus curl-Ausgabe nehmen:
-const ws = new WebSocket('ws://127.0.0.1:9222/devtools/page/<PAGE_ID>');
-ws.on('open', () => {
-  ws.send(JSON.stringify({id:1, method:'Page.captureScreenshot', params:{format:'png'}}));
-});
+const ws = new WebSocket('ws://127.0.0.1:9222/devtools/page/$PAGE_ID');
+ws.on('open', () => ws.send(JSON.stringify({id:1, method:'Page.captureScreenshot', params:{format:'png'}})));
 ws.on('message', (data) => {
   const msg = JSON.parse(data);
   if (msg.result?.data) {
@@ -341,15 +350,17 @@ ws.on('message', (data) => {
     ws.close();
   }
 });
+setTimeout(() => process.exit(0), 5000);
 "
 
-# App stoppen
+# 8. App stoppen
 pkill -f electron
 ```
 
-**Merke:** ffmpeg X11-Grab liefert schwarzes Bild (Weston-Compositor).
-NUR CDP-Screenshots über Port 9222 funktionieren!
-
+**WICHTIG:**
+- ffmpeg X11-Grab liefert schwarzes Bild (Weston-Compositor) → NUR CDP-Screenshots!
+- Bridge-Logs erscheinen als `[Bridge Error] Bridge stderr:` — das ist KEIN Fehler, nur stderr-Weiterleitung
+- SwyxBridge.exe braucht .NET 8 Runtime auf Windows (installiert: .NET 10)
 ---
 
 ## Datenfluss: Anruf
