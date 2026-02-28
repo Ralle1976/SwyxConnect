@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { BridgeManager } from './bridge/BridgeManager'
@@ -55,11 +55,75 @@ function createMainWindow(): BrowserWindow {
     },
   })
 
+  // ---------- FENSTER SICHER ANZEIGEN ----------
+
+  let windowShown = false
+
+  const showWindow = (): void => {
+    if (windowShown || win.isDestroyed()) return
+    windowShown = true
+    win.show()
+    win.focus()
+    console.log('[Main] Fenster angezeigt.')
+  }
+
+  // Normaler Pfad: Fenster zeigen wenn Renderer bereit ist
   win.on('ready-to-show', () => {
+    console.log('[Main] ready-to-show gefeuert.')
     if (!settingsStore.get('startMinimized')) {
-      win.show()
+      showWindow()
     }
   })
+
+  // Fallback: Fenster nach 5 Sekunden ERZWINGEN, falls ready-to-show nie kommt
+  const forceShowTimer = setTimeout(() => {
+    if (!windowShown && !win.isDestroyed()) {
+      console.warn('[Main] WARNUNG: ready-to-show hat nach 5s nicht gefeuert. Fenster wird erzwungen.')
+      showWindow()
+    }
+  }, 5000)
+
+  // Timer aufräumen wenn Fenster geschlossen wird
+  win.on('closed', () => {
+    clearTimeout(forceShowTimer)
+  })
+
+  // ---------- RENDERER FEHLER-HANDLING ----------
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[Main] Renderer konnte nicht laden: ${errorCode} ${errorDescription} URL: ${validatedURL}`)
+    // Trotzdem anzeigen damit der User den Fehler sieht
+    showWindow()
+  })
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[Main] Renderer-Prozess abgestürzt: ${details.reason}`)
+    dialog.showErrorBox(
+      'SwyxConnect - Renderer Fehler',
+      `Der Renderer ist abgestürzt (${details.reason}). Die App wird neu geladen.`
+    )
+    if (!win.isDestroyed()) {
+      win.reload()
+    }
+  })
+
+  win.webContents.on('unresponsive', () => {
+    console.warn('[Main] Renderer reagiert nicht mehr.')
+  })
+
+  win.webContents.on('responsive', () => {
+    console.log('[Main] Renderer reagiert wieder.')
+  })
+
+  // DevTools öffnen bei Fehler (nur im Dev-Modus)
+  win.webContents.on('console-message', (_event, level, message) => {
+    // level: 0=verbose, 1=info, 2=warning, 3=error
+    if (level >= 3) {
+      console.error(`[Renderer Error] ${message}`)
+    }
+  })
+
+  // ---------- FENSTER-EVENTS ----------
 
   win.on('close', (event) => {
     if (settingsStore.get('closeToTray') !== false && !isQuitting) {
@@ -84,10 +148,23 @@ function createMainWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  // ---------- RENDERER LADEN ----------
+
+  const rendererURL = is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+
+  if (rendererURL) {
+    console.log(`[Main] Lade Renderer von URL: ${rendererURL}`)
+    win.loadURL(rendererURL).catch((err) => {
+      console.error(`[Main] loadURL fehlgeschlagen: ${err.message}`)
+      showWindow()
+    })
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    const htmlPath = join(__dirname, '../renderer/index.html')
+    console.log(`[Main] Lade Renderer von Datei: ${htmlPath}`)
+    win.loadFile(htmlPath).catch((err) => {
+      console.error(`[Main] loadFile fehlgeschlagen: ${err.message}`)
+      showWindow()
+    })
   }
 
   return win
@@ -104,7 +181,7 @@ app.on('before-quit', () => {
 registerIpcHandlers(bridgeManager, settingsStore, getMainWindow)
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.ralle197.swyit')
+  electronApp.setAppUserModelId('com.ralle197.swyxconnect')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -140,6 +217,7 @@ app.whenReady().then(() => {
     console.error('[Bridge Error]', err.message)
   })
 
+  console.log('[Main] Bridge wird gestartet...')
   bridgeManager.start()
 
   app.on('activate', () => {
