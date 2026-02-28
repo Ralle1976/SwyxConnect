@@ -10,6 +10,7 @@ import { useSettingsStore, applyTheme } from '../stores/useSettingsStore'
 import { usePresenceStore } from '../stores/usePresenceStore'
 import { useCallHistoryTracker } from '../stores/useCallHistoryTracker'
 import { LineState } from '../types/swyx'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import PhoneView from '../components/phone/PhoneView'
 import ContactsView from '../components/contacts/ContactsView'
 import HistoryView from '../components/history/HistoryView'
@@ -30,6 +31,9 @@ export function App() {
 
   // Initialize call history tracking
   useCallHistoryTracker()
+
+  // Keyboard shortcuts (F5=answer, F6=hangup, F7=hold, Esc=hangup)
+  useKeyboardShortcuts()
 
   // Load settings from Main Process on connect
   useEffect(() => {

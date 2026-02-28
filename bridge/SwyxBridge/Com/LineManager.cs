@@ -120,27 +120,8 @@ public sealed class LineManager
     /// </summary>
     public void SuppressSwyxWindowPeriodic()
     {
-        try
-        {
-            var fg = GetForegroundWindow();
-            if (fg == IntPtr.Zero) return;
-
-            GetWindowThreadProcessId(fg, out uint processId);
-            if (processId == 0) return;
-
-            try
-            {
-                var proc = Process.GetProcessById((int)processId);
-                var name = proc.ProcessName.ToLowerInvariant();
-                if (name.Contains("swyxit") || name == "swyxitc")
-                {
-                    ShowWindow(fg, SW_SHOWMINNOACTIVE);
-                    Logging.Info($"LineManager: SwyxIt!-Fenster unterdrückt (Timer, PID={processId})");
-                }
-            }
-            catch { /* Prozess nicht mehr verfügbar */ }
-        }
-        catch { /* Ignore */ }
+        // Delegiere an SwyxConnector — findet ALLE Fenster via EnumWindows + SW_HIDE
+        SwyxConnector.HideAllSwyxItWindows();
     }
 
     // --- Anruf-Steuerung ---
@@ -452,42 +433,15 @@ public sealed class LineManager
             // Kurz warten damit SwyxIt! Zeit hat in den Vordergrund zu kommen
             Thread.Sleep(150);
 
-            // Prüfe ob sich das Vordergrund-Fenster geändert hat
-            var currentForeground = GetForegroundWindow();
-            if (currentForeground == previousForeground || currentForeground == IntPtr.Zero)
-                return; // Nichts passiert, SwyxIt! hat sich nicht nach vorne gedrängt
+            // Alle SwyxIt!-Fenster verstecken (SW_HIDE via EnumWindows)
+            SwyxConnector.HideAllSwyxItWindows();
 
-            // Prüfe ob das neue Vordergrund-Fenster zu SwyxIt! gehört
-            GetWindowThreadProcessId(currentForeground, out uint processId);
-            try
+            // Unser Fenster wieder nach vorne bringen
+            if (previousForeground != IntPtr.Zero)
             {
-                var proc = Process.GetProcessById((int)processId);
-                var procName = proc.ProcessName.ToLowerInvariant();
-                if (procName.Contains("swyxit") || procName.Contains("swyx") || procName.Contains("clmgr"))
-                {
-                    ShowWindow(currentForeground, SW_SHOWMINNOACTIVE);
-                    Logging.Info($"LineManager: SwyxIt!-Fenster unterdrückt (PID={processId}, Process={proc.ProcessName})");
-
-                    // Unser Fenster wieder nach vorne bringen
-                    if (previousForeground != IntPtr.Zero)
-                        SetForegroundWindow(previousForeground);
-                }
-            }
-            catch { /* Prozess bereits beendet oder Zugriff verweigert */ }
-
-            // Zusätzlich: Alle SwyxIt!-Fenster durchgehen und minimieren
-            foreach (var proc in Process.GetProcesses())
-            {
-                try
-                {
-                    var name = proc.ProcessName.ToLowerInvariant();
-                    if ((name.Contains("swyxit") || name == "swyxitc") && proc.MainWindowHandle != IntPtr.Zero)
-                    {
-                        ShowWindow(proc.MainWindowHandle, SW_SHOWMINNOACTIVE);
-                        Logging.Info($"LineManager: SwyxIt!-Prozess minimiert: {proc.ProcessName} (PID={proc.Id})");
-                    }
-                }
-                catch { /* Ignore */ }
+                var currentForeground = GetForegroundWindow();
+                if (currentForeground != previousForeground)
+                    SetForegroundWindow(previousForeground);
             }
         }
         catch (Exception ex)

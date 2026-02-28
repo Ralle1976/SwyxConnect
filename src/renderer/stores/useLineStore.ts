@@ -62,3 +62,20 @@ export function hasActiveCall(lines: LineInfo[]): boolean {
 export function getRingingLines(lines: LineInfo[]): LineInfo[] {
   return lines.filter((l) => l.state === LineState.Ringing);
 }
+
+export function getActiveLines(lines: LineInfo[]): LineInfo[] {
+  return lines.filter(
+    (l) =>
+      l.state === LineState.Active ||
+      l.state === LineState.ConferenceActive ||
+      l.state === LineState.Dialing ||
+      l.state === LineState.Alerting ||
+      l.state === LineState.Busy
+  );
+}
+
+export function getHeldLines(lines: LineInfo[]): LineInfo[] {
+  return lines.filter(
+    (l) => l.state === LineState.OnHold || l.state === LineState.ConferenceOnHold
+  );
+}
