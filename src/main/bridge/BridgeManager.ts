@@ -50,7 +50,7 @@ export class BridgeManager extends EventEmitter {
     if (this._resolvedBridgePath) return this._resolvedBridgePath;
 
     if (app.isPackaged) {
-      this._resolvedBridgePath = path.join(process.resourcesPath, 'SwyxBridge.exe');
+      this._resolvedBridgePath = path.join(process.resourcesPath, 'bridge', 'SwyxBridge.exe');
       return this._resolvedBridgePath;
     }
 
