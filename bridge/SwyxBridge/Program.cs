@@ -5,6 +5,7 @@ using SwyxBridge.Handlers;
 using SwyxBridge.JsonRpc;
 using SwyxBridge.Utils;
 using SwyxBridge.Standalone;
+using System.ServiceModel;
 
 namespace SwyxBridge;
 
@@ -31,6 +32,11 @@ static class Program
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
     private static StandaloneKestrelHost? _kestrelHost;
+
+    private static string? _cdsAccessToken;
+    private static string? _cdsRefreshToken;
+    private static int _cdsUserId;
+    private static string? _cdsUsername;
 
     [STAThread]
     static void Main(string[] args)
@@ -307,6 +313,110 @@ static class Program
                     {
                         var result = await NetworkProbe.ProbeSipRegisterAsync(host, port, username);
                         if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, result);
+                    }
+                    catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
+        }
+
+        // --- CDS Login (AcquireToken) ---
+        if (req.Method == "cdsLogin")
+        {
+            try
+            {
+                string host = "127.0.0.1", username = "", password = "";
+                int port = 9094;
+
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var p = req.Params.Value;
+                    if (p.TryGetProperty("host", out var h) && h.GetString() is string hv) host = hv;
+                    if (p.TryGetProperty("port", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) port = pt.GetInt32();
+                    if (p.TryGetProperty("username", out var un) && un.GetString() is string uv) username = uv;
+                    if (p.TryGetProperty("password", out var pw) && pw.GetString() is string pv) password = pv;
+                }
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        using var client = new CdsLoginClient(host, port);
+                        var result = client.AcquireToken(username, password);
+                        if (result.Success)
+                        {
+                            _cdsAccessToken = result.AccessToken;
+                            _cdsRefreshToken = result.RefreshToken;
+                            _cdsUserId = result.UserId;
+                            _cdsUsername = username;
+                        }
+                        var shortAt = result.AccessToken != null && result.AccessToken.Length > 20
+                            ? result.AccessToken.Substring(0, 20) + "..."
+                            : result.AccessToken;
+                        var shortRt = result.RefreshToken != null && result.RefreshToken.Length > 20
+                            ? result.RefreshToken.Substring(0, 20) + "..."
+                            : result.RefreshToken;
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new
+                        {
+                            success = result.Success,
+                            userId = result.UserId,
+                            accessToken = shortAt,
+                            refreshToken = shortRt,
+                            error = result.Error
+                        });
+                    }
+                    catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
+        }
+
+        // --- CDS Get SIP Credentials ---
+        if (req.Method == "getSipCredentials")
+        {
+            try
+            {
+                if (_cdsAccessToken == null)
+                {
+                    if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, "Zuerst cdsLogin aufrufen");
+                    return;
+                }
+
+                string host = "127.0.0.1";
+                int port = 9094;
+                int? userId = null;
+
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var p = req.Params.Value;
+                    if (p.TryGetProperty("host", out var h) && h.GetString() is string hv) host = hv;
+                    if (p.TryGetProperty("port", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) port = pt.GetInt32();
+                    if (p.TryGetProperty("userId", out var uid) && uid.ValueKind == System.Text.Json.JsonValueKind.Number) userId = uid.GetInt32();
+                }
+
+                var resolvedUserId = userId ?? _cdsUserId;
+                var capturedToken = _cdsAccessToken!;
+                var capturedUsername = _cdsUsername ?? "";
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        using var facade = new CdsPhoneClientFacade(host, port, capturedToken, capturedUsername);
+                        var creds = facade.GetSipCredentials(resolvedUserId);
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new
+                        {
+                            sipRealm = creds?.SipRealm,
+                            sipUserId = creds?.SipUserID,
+                            sipUserName = creds?.SipUserName,
+                            userId = creds?.UserID
+                        });
+                    }
+                    catch (FaultException<CdsTException> fex)
+                    {
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, $"CDS Fault: {fex.Detail?.Message ?? fex.Message} (Code: {fex.Detail?.ErrorCode})");
                     }
                     catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
                 });
