@@ -195,7 +195,9 @@ SwyIt-byRalle1976/
 │   │   ├── Com/
 │   │   │   ├── SwyxConnector.cs  # COM-Verbindung und Lifecycle
 │   │   │   ├── LineManager.cs    # Multi-Line: Dial, Hangup, GetAllLines
-│   │   │   └── EventSink.cs     # PubOnLineMgrNotification → JSON-RPC
+│   │   │   ├── EventSink.cs     # PubOnLineMgrNotification → JSON-RPC
+│   │   │   ├── StaDispatcher.cs  # STA-Thread Synchronisation
+│   │   │   └── WindowHook.cs    # 3-stufige Fensterunterdrückung + Dialog-Killer
 │   │   ├── Handlers/
 │   │   │   ├── CallHandler.cs    # JSON-RPC → LineManager Routing
 │   │   │   ├── PresenceHandler.cs # Away/DND/Available via DispClientConfig
@@ -412,13 +414,20 @@ COM feuert PubOnLineMgrNotification(msg=0..3)
 - **Leitungsanzahl**: IPC-Kette Settings → Bridge → DispSetNumberOfLines(n)
 - **Audio-Test**: 440Hz Sinuston + Mikrofon-Pegel-Meter
 
-### SwyxIt!-Fensterunterdrückung 🔧
+### SwyxIt!-Fensterunterdrückung ✅
 
-- **EnumWindows** findet ALLE Top-Level-Fenster (nicht nur MainWindowHandle)
-- **SW_HIDE** statt SW_SHOWMINNOACTIVE (komplett unsichtbar)
-- **ProcessWindowStyle.Hidden** beim Start
-- Periodisch alle 1.5s + nach jedem Dial + während CLMgr-Wartezeit
-- **Noch nicht auf Windows live getestet** — User muss verifizieren
+Dreistufige Eliminierung aller SwyxIt!-Fenster über `WindowHook.cs`:
+
+1. **PROAKTIV**: Beim Start → `RefreshSwyxPids()` findet alle Swyx-Prozesse (SwyxIt!, CLMgr, IpPbxSrv, SkinPhone, etc.) → `ExileAllSwyxWindows()` verschiebt alle Fenster auf (-32000,-32000) mit Größe 0×0.
+2. **REAKTIV**: `SetWinEventHook` (EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW, EVENT_SYSTEM_FOREGROUND) → jedes neue Swyx-Fenster wird sofort via `NukeWindow()` off-screen verschoben + SW_HIDE + WS_VISIBLE entfernt + WS_EX_TOOLWINDOW/WS_EX_NOACTIVATE gesetzt.
+3. **DIALOG-KILLER**: Modale Dialoge (Win32 Klasse `#32770`, Titel enthält error/fehler/javascript/script/warnung/warning) werden per `PostMessage(WM_CLOSE)` geschlossen + off-screen verschoben + versteckt. Verhindert dass "JavaScript error occurred"-Dialoge den SwyxIt!-Prozess blockieren.
+4. **TIMER-FALLBACK**: WinForms Timer (500ms) ruft `ExileAllSwyxWindows()` auf + `RefreshSwyxPids()` für neu gestartete Prozesse.
+
+**Key Details:**
+- `WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS` — Hooks laufen im eigenen Prozesskontext, keine DLL-Injection nötig
+- Off-screen Position (-32000,-32000) + Größe 0 ist effektiver als nur SW_HIDE, da auch bei kurzzeitigem WS_VISIBLE das Fenster auf keinem Monitor sichtbar ist
+- `PostMessage(WM_CLOSE)` statt `SendMessage` für non-blocking Dialog-Schließung
+- PID-Tracking über Prozessnamen-Muster (swyxit, clmgr, ippbxsrv, skinphone, swyx)
 
 ### Geplant 📋
 

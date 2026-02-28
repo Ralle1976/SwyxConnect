@@ -1,26 +1,22 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using SwyxBridge.Utils;
 
 namespace SwyxBridge.Com;
 
 /// <summary>
-/// Strategie gegen SwyxIt!-Fenster-Blitz:
+/// Dreistufige Fenster-Eliminierung für SwyxIt!:
 ///
-/// 1. PROAKTIV: Alle SwyxIt!-Fenster werden permanent off-screen verschoben
-///    (Position -32000,-32000, Größe 0×0). Selbst wenn Windows WS_VISIBLE
-///    setzt, befindet sich das Fenster auf keinem Monitor → kein Blitz.
+/// 1. PROAKTIV: Alle SwyxIt!-Fenster permanent off-screen (-32000,-32000, 0×0).
+/// 2. REAKTIV: SetWinEventHook (CREATE/SHOW/FOREGROUND) → sofort NukeWindow().
+/// 3. DIALOG-KILLER: Modale Dialoge (z.B. "JavaScript error") per WM_CLOSE schließen.
+/// 4. FALLBACK: Timer 500ms für alles was den Hooks entgeht.
 ///
-/// 2. REAKTIV: SetWinEventHook fängt EVENT_OBJECT_SHOW / EVENT_SYSTEM_FOREGROUND
-///    ab und versteckt + verschiebt Fenster sofort im Callback.
-///
-/// 3. FALLBACK: Timer-Polling alle 500ms als letzte Sicherheitsstufe.
-///
-/// CRITICAL: Muss auf dem STA-Thread mit aktiver Message Pump laufen.
+/// Trackt nicht nur SwyxIt!.exe sondern auch CLMgr, IpPbxSrv und andere Child-Prozesse.
 /// </summary>
 public sealed class WindowHook : IDisposable
 {
-    // Win32 Event-Konstanten
     private const uint EVENT_OBJECT_SHOW = 0x8002;
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint EVENT_OBJECT_CREATE = 0x8000;
@@ -33,25 +29,23 @@ public sealed class WindowHook : IDisposable
     private const int WS_VISIBLE = 0x10000000;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
     private const int WS_EX_NOACTIVATE = 0x08000000;
-
-    // SetWindowPos Flags
     private const uint SWP_NOACTIVATE = 0x0010;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_HIDEWINDOW = 0x0080;
     private const uint SWP_FRAMECHANGED = 0x0020;
-
-    // Off-screen Position — weit außerhalb jedes Monitors
     private const int OFFSCREEN_X = -32000;
     private const int OFFSCREEN_Y = -32000;
+    private const int WM_CLOSE = 0x0010;
 
-    // Win32 P/Invoke
+    // Dialog-Fenster Klassename in Win32
+    private const string DIALOG_CLASS = "#32770";
+
+    // ── P/Invoke ────────────────────────────────────────────────────────────────
+
     [DllImport("user32.dll")]
     private static extern IntPtr SetWinEventHook(
-        uint eventMin, uint eventMax,
-        IntPtr hmodWinEventProc,
-        WinEventDelegate lpfnWinEventProc,
-        uint idProcess, uint idThread,
-        uint dwFlags);
+        uint eventMin, uint eventMax, IntPtr hmodWinEventProc,
+        WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -84,40 +78,59 @@ public sealed class WindowHook : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
     private delegate void WinEventDelegate(
-        IntPtr hWinEventHook,
-        uint eventType,
-        IntPtr hwnd,
-        int idObject,
-        int idChild,
-        uint dwEventThread,
-        uint dwmsEventTime);
+        IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
+        int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
-    // Static instance to prevent GC
+    // ── Static + Instance ───────────────────────────────────────────────────────
+
     private static WindowHook? _instance;
 
-    // CRITICAL: Delegate + EnumWindowsProc MÜSSEN als Feld gehalten werden
+    // CRITICAL: Delegate MUSS als Feld gehalten werden (GC-Schutz)
     private readonly WinEventDelegate _hookDelegate;
 
     private IntPtr _hookShow = IntPtr.Zero;
     private IntPtr _hookForeground = IntPtr.Zero;
     private IntPtr _hookCreate = IntPtr.Zero;
     private readonly HashSet<uint> _swyxPids = new();
-    private readonly HashSet<IntPtr> _exiledWindows = new();  // Bereits off-screen verschobene Fenster
+    private readonly HashSet<IntPtr> _exiledWindows = new();
     private bool _disposed;
     private int _hideCount;
+    private int _dialogsKilled;
+
+    // Prozessnamen die zu SwyxIt! gehören (alles lowercase)
+    private static readonly string[] SwyxProcessPatterns = new[]
+    {
+        "swyxit",     // SwyxIt!.exe, SwyxIt!C.exe
+        "swyxitc",
+        "clmgr",      // Client Line Manager
+        "ippbxsrv",   // IP PBX Server Client
+        "skinphone",  // SkinPhone UI
+        "swyx",       // Catch-all für Swyx-Prozesse
+    };
 
     private WindowHook()
     {
         _hookDelegate = WinEventProc;
     }
 
-    /// <summary>
-    /// Installiert Event-Hooks und verschiebt alle existierenden SwyxIt!-Fenster off-screen.
-    /// MUSS auf dem STA-Thread aufgerufen werden.
-    /// </summary>
+    // ── Install ─────────────────────────────────────────────────────────────────
+
     public static WindowHook Install()
     {
         _instance?.Dispose();
@@ -126,30 +139,21 @@ public sealed class WindowHook : IDisposable
         _instance = hook;
 
         hook.RefreshSwyxPids();
-
-        // SOFORT alle existierenden Fenster off-screen verschieben
         hook.ExileAllSwyxWindows();
 
-        // Hook für EVENT_OBJECT_CREATE — fängt Fenster ab sobald sie ERSTELLT werden
-        // (bevor sie sichtbar sind)
         hook._hookCreate = SetWinEventHook(
             EVENT_OBJECT_CREATE, EVENT_OBJECT_CREATE,
-            IntPtr.Zero, hook._hookDelegate,
-            0, 0,
+            IntPtr.Zero, hook._hookDelegate, 0, 0,
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
-        // Hook für EVENT_OBJECT_SHOW — fängt Fenster ab wenn sie sichtbar gemacht werden
         hook._hookShow = SetWinEventHook(
             EVENT_OBJECT_SHOW, EVENT_OBJECT_SHOW,
-            IntPtr.Zero, hook._hookDelegate,
-            0, 0,
+            IntPtr.Zero, hook._hookDelegate, 0, 0,
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
-        // Hook für EVENT_SYSTEM_FOREGROUND — fängt Fenster ab die in den Vordergrund kommen
         hook._hookForeground = SetWinEventHook(
             EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero, hook._hookDelegate,
-            0, 0,
+            IntPtr.Zero, hook._hookDelegate, 0, 0,
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
         bool allOk = hook._hookCreate != IntPtr.Zero
@@ -159,16 +163,14 @@ public sealed class WindowHook : IDisposable
         if (!allOk)
             Logging.Warn("WindowHook: Nicht alle Hooks installiert!");
         else
-            Logging.Info($"WindowHook: 3 Event-Hooks installiert (PIDs: {string.Join(", ", hook._swyxPids)}). "
-                       + $"{hook._exiledWindows.Count} Fenster off-screen verschoben.");
+            Logging.Info($"WindowHook: 3 Hooks aktiv, {hook._swyxPids.Count} PIDs, "
+                       + $"{hook._exiledWindows.Count} Fenster off-screen.");
 
         return hook;
     }
 
-    /// <summary>
-    /// Aktualisiert SwyxIt!-PIDs und verschiebt neue Fenster off-screen.
-    /// Wird vom Timer periodisch aufgerufen.
-    /// </summary>
+    // ── PID Management ──────────────────────────────────────────────────────────
+
     public void RefreshSwyxPids()
     {
         _swyxPids.Clear();
@@ -177,137 +179,198 @@ public sealed class WindowHook : IDisposable
             try
             {
                 var name = proc.ProcessName.ToLowerInvariant();
-                if (name.Contains("swyxit") || name == "swyxitc")
-                    _swyxPids.Add((uint)proc.Id);
+                foreach (var pattern in SwyxProcessPatterns)
+                {
+                    if (name.Contains(pattern))
+                    {
+                        _swyxPids.Add((uint)proc.Id);
+                        break;
+                    }
+                }
             }
             catch { }
         }
     }
 
-    /// <summary>
-    /// Findet ALLE SwyxIt!-Fenster per EnumWindows und verschiebt sie off-screen.
-    /// Dreistufig: 1) Off-screen + Größe 0, 2) SW_HIDE, 3) WS_VISIBLE entfernen.
-    /// </summary>
+    // ── Exile All ───────────────────────────────────────────────────────────────
+
     public void ExileAllSwyxWindows()
     {
         if (_swyxPids.Count == 0) return;
 
-        int count = 0;
+        int nuked = 0;
+        int dialogsClosed = 0;
+
         EnumWindows((hWnd, _) =>
         {
             try
             {
                 GetWindowThreadProcessId(hWnd, out uint pid);
-                if (_swyxPids.Contains(pid))
+                if (!_swyxPids.Contains(pid)) return true;
+
+                // Dialog erkennen und schließen
+                if (IsDialogWindow(hWnd))
+                {
+                    KillDialog(hWnd);
+                    dialogsClosed++;
+                }
+                else
                 {
                     NukeWindow(hWnd);
-                    count++;
+                    nuked++;
                 }
             }
             catch { }
             return true;
         }, IntPtr.Zero);
 
-        if (count > 0)
-            Logging.Info($"WindowHook: {count} Fenster exile'd (off-screen + hidden).");
+        if (nuked > 0 || dialogsClosed > 0)
+        {
+            if (_hideCount == 0) // Nur beim ersten Mal loggen
+                Logging.Info($"WindowHook: {nuked} Fenster exile'd, {dialogsClosed} Dialoge geschlossen.");
+        }
     }
 
-    /// <summary>
-    /// Macht ein einzelnes Fenster komplett unsichtbar:
-    /// 1. Off-screen verschieben (-32000, -32000) mit Größe 0×0
-    /// 2. SW_HIDE
-    /// 3. WS_VISIBLE entfernen
-    /// 4. WS_EX_TOOLWINDOW + WS_EX_NOACTIVATE setzen (verhindert Taskbar-Eintrag + Fokus)
-    /// </summary>
+    // ── Nuke Window (off-screen + hidden) ───────────────────────────────────────
+
     private void NukeWindow(IntPtr hWnd)
     {
         try
         {
-            // Schritt 1: Off-screen + Größe 0 — auch wenn WS_VISIBLE kurz gesetzt wird,
-            // ist das Fenster auf keinem Monitor sichtbar
+            // 1. Off-screen + Größe 0
             SetWindowPos(hWnd, IntPtr.Zero,
                 OFFSCREEN_X, OFFSCREEN_Y, 0, 0,
                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW | SWP_FRAMECHANGED);
 
-            // Schritt 2: SW_HIDE
+            // 2. SW_HIDE
             ShowWindow(hWnd, SW_HIDE);
 
-            // Schritt 3: WS_VISIBLE Flag entfernen
+            // 3. WS_VISIBLE entfernen
             int style = GetWindowLong(hWnd, GWL_STYLE);
             if ((style & WS_VISIBLE) != 0)
                 SetWindowLong(hWnd, GWL_STYLE, style & ~WS_VISIBLE);
 
-            // Schritt 4: Als Tool-Window markieren (kein Taskbar-Eintrag, nicht aktivierbar)
+            // 4. Tool-Window + NoActivate
             int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
-            int newExStyle = exStyle | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
-            if (newExStyle != exStyle)
-                SetWindowLong(hWnd, GWL_EXSTYLE, newExStyle);
+            int newEx = exStyle | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            if (newEx != exStyle)
+                SetWindowLong(hWnd, GWL_EXSTYLE, newEx);
 
             _exiledWindows.Add(hWnd);
         }
         catch { }
     }
 
+    // ── Dialog Detection + Kill ─────────────────────────────────────────────────
+
     /// <summary>
-    /// Event-Callback. Wird bei SHOW, FOREGROUND und CREATE aufgerufen.
-    /// Reagiert sofort — verschiebt SwyxIt!-Fenster off-screen + hidden.
+    /// Prüft ob ein Fenster ein Dialog ist (Klasse "#32770" oder Titel enthält
+    /// typische Error-Signalwörter).
     /// </summary>
+    private static bool IsDialogWindow(IntPtr hWnd)
+    {
+        try
+        {
+            // Klasse prüfen
+            var className = new StringBuilder(256);
+            GetClassName(hWnd, className, 256);
+            string cls = className.ToString();
+
+            if (cls == DIALOG_CLASS) return true;
+
+            // Titel prüfen auf Error-Dialoge
+            var title = new StringBuilder(256);
+            GetWindowText(hWnd, title, 256);
+            string titleStr = title.ToString().ToLowerInvariant();
+
+            if (titleStr.Contains("error") || titleStr.Contains("fehler")
+                || titleStr.Contains("javascript") || titleStr.Contains("script")
+                || titleStr.Contains("warnung") || titleStr.Contains("warning"))
+                return true;
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>
+    /// Schließt einen Dialog per WM_CLOSE. Funktioniert auch bei modalen Dialogen.
+    /// Falls WM_CLOSE nicht wirkt: auch off-screen verschieben + verstecken.
+    /// </summary>
+    private void KillDialog(IntPtr hWnd)
+    {
+        try
+        {
+            // Erst off-screen verschieben (sofort unsichtbar)
+            SetWindowPos(hWnd, IntPtr.Zero,
+                OFFSCREEN_X, OFFSCREEN_Y, 0, 0,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+
+            ShowWindow(hWnd, SW_HIDE);
+
+            // Dann WM_CLOSE senden um den Dialog zu schließen
+            // PostMessage ist non-blocking (anders als SendMessage)
+            PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+
+            _dialogsKilled++;
+
+            if (_dialogsKilled <= 20)
+            {
+                var title = new StringBuilder(256);
+                GetWindowText(hWnd, title, 256);
+                Logging.Info($"WindowHook: Dialog geschlossen: \"{title}\" (total={_dialogsKilled}).");
+            }
+        }
+        catch { }
+    }
+
+    // ── Event Callback ──────────────────────────────────────────────────────────
+
     private void WinEventProc(
-        IntPtr hWinEventHook,
-        uint eventType,
-        IntPtr hwnd,
-        int idObject,
-        int idChild,
-        uint dwEventThread,
-        uint dwmsEventTime)
+        IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
+        int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
     {
         if (hwnd == IntPtr.Zero) return;
         if (_swyxPids.Count == 0) return;
-        // Nur Top-Level-Fenster
-        if (idObject != 0) return;
+        if (idObject != 0) return; // Nur Top-Level
 
         try
         {
             GetWindowThreadProcessId(hwnd, out uint pid);
             if (!_swyxPids.Contains(pid)) return;
 
-            // Fenster gehört zu SwyxIt! — sofort eliminieren
-            NukeWindow(hwnd);
+            // Dialog? → Sofort schließen
+            if (IsDialogWindow(hwnd))
+            {
+                KillDialog(hwnd);
+            }
+            else
+            {
+                NukeWindow(hwnd);
+            }
+
             _hideCount++;
 
-            if (_hideCount <= 10 || _hideCount % 100 == 0)
-            {
-                Logging.Info($"WindowHook: Fenster geNuked (event=0x{eventType:X4}, total={_hideCount}).");
-            }
+            if (_hideCount <= 5 || _hideCount % 200 == 0)
+                Logging.Info($"WindowHook: event=0x{eventType:X4}, hide={_hideCount}, dialogs={_dialogsKilled}.");
         }
         catch (Exception ex)
         {
-            Logging.Warn($"WindowHook: WinEventProc Fehler: {ex.Message}");
+            Logging.Warn($"WindowHook: WinEventProc: {ex.Message}");
         }
     }
+
+    // ── Dispose ─────────────────────────────────────────────────────────────────
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
 
-        if (_hookCreate != IntPtr.Zero)
-        {
-            UnhookWinEvent(_hookCreate);
-            _hookCreate = IntPtr.Zero;
-        }
-        if (_hookShow != IntPtr.Zero)
-        {
-            UnhookWinEvent(_hookShow);
-            _hookShow = IntPtr.Zero;
-        }
-        if (_hookForeground != IntPtr.Zero)
-        {
-            UnhookWinEvent(_hookForeground);
-            _hookForeground = IntPtr.Zero;
-        }
+        if (_hookCreate != IntPtr.Zero) { UnhookWinEvent(_hookCreate); _hookCreate = IntPtr.Zero; }
+        if (_hookShow != IntPtr.Zero) { UnhookWinEvent(_hookShow); _hookShow = IntPtr.Zero; }
+        if (_hookForeground != IntPtr.Zero) { UnhookWinEvent(_hookForeground); _hookForeground = IntPtr.Zero; }
 
-        Logging.Info($"WindowHook: Hooks entfernt. {_hideCount}× Fenster versteckt, {_exiledWindows.Count} off-screen.");
+        Logging.Info($"WindowHook: Fertig. {_hideCount}× versteckt, {_dialogsKilled}× Dialoge geschlossen.");
         _instance = null;
     }
 }
