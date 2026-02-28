@@ -134,7 +134,13 @@ export class BridgeManager extends EventEmitter {
 
       child.stderr?.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8').trim();
-        if (text) this.emit('error', new Error(`Bridge stderr: ${text}`));
+        if (!text) return;
+        // C# Bridge schreibt Logs auf stderr — nach Level unterscheiden
+        if (text.includes(' ERR]') || text.includes(' FTL]')) {
+          this.emit('error', new Error(text));
+        } else {
+          this.emit('log', text);
+        }
       });
 
       child.on('spawn', () => {

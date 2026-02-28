@@ -1,5 +1,5 @@
-appId: com.ralle197.swyit
-productName: SwyIt-byRalle197
+appId: com.ralle1976.swyxconnect
+productName: SwyxConnect
 directories:
   buildResources: resources
   output: dist
@@ -27,4 +27,4 @@ nsis:
   oneClick: false
   perMachine: true
   allowToChangeInstallationDirectory: true
-  shortcutName: SwyIt by Ralle197
+  shortcutName: SwyxConnect by Ralle1976

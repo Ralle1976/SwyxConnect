@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { TitleBar } from '../components/layout/TitleBar'
 import { Sidebar } from '../components/layout/Sidebar'
@@ -18,6 +18,7 @@ import VoicemailView from '../components/voicemail/VoicemailView'
 import PresenceView from '../components/presence/PresenceView'
 import SettingsView from '../components/settings/SettingsView'
 import CallcenterDashboard from '../components/callcenter/CallcenterDashboard'
+import { KeyboardShortcutsDialog } from '../components/common/KeyboardShortcutsDialog'
 
 export function App() {
   const { isConnected, bridgeState } = useBridge()
@@ -29,11 +30,13 @@ export function App() {
   const theme = useSettingsStore((s) => s.theme)
   const loadFromMain = useSettingsStore((s) => s.loadFromMain)
 
+  const [showHelp, setShowHelp] = useState(false)
+
   // Initialize call history tracking
   useCallHistoryTracker()
 
-  // Keyboard shortcuts (F5=answer, F6=hangup, F7=hold, Esc=hangup)
-  useKeyboardShortcuts()
+  // Keyboard shortcuts (F5=answer, F6=hangup, F7=hold, Esc=hangup, F1/?=Hilfe)
+  useKeyboardShortcuts(() => setShowHelp(true))
 
   // Load settings from Main Process on connect
   useEffect(() => {
@@ -95,7 +98,7 @@ export function App() {
         ))}
 
         <div className="flex flex-1 overflow-hidden">
-          <Sidebar />
+          <Sidebar onShowHelp={() => setShowHelp(true)} />
           <MainContent>
             <Routes>
               <Route path="/" element={<PhoneView />} />
@@ -109,6 +112,7 @@ export function App() {
           </MainContent>
         </div>
       </div>
+      <KeyboardShortcutsDialog open={showHelp} onClose={() => setShowHelp(false)} />
     </HashRouter>
   )
 }

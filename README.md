@@ -14,7 +14,8 @@ SwyxConnect ist ein modernes UI-Replacement für SwyxIt!. Die Anwendung bietet e
 - DTMF-Tastentöne während des Gesprächs
 - 4 Leitungen mit Echtzeit-Statusanzeige
 - Eingehende Anrufe mit Popup-Banner
-- Tastaturkürzel: F5 Annehmen, F6 Auflegen, F7 Halten, F8 Stumm
+- Tastaturkürzel: F5 Annehmen, F6 Auflegen, F7 Halten, F8 Stumm, Esc Beenden
+- Integrierte Tastenkürzel-Hilfe (F1 oder ?)
 
 **Kontakte & Verlauf**
 - Firmen-Kontaktbuch mit Schnellsuche (Echtdaten vom Swyx-Server)
@@ -48,7 +49,23 @@ SwyxConnect ist ein modernes UI-Replacement für SwyxIt!. Die Anwendung bietet e
 
 ## Screenshots
 
-> *Folgt in Kürze*
+### Telefon — Dialpad mit Leitungsanzeige
+![Telefon](docs/screenshots/phone-view.png)
+
+### Kontakte — Firmen-Kontaktbuch mit Echtzeitdaten
+![Kontakte](docs/screenshots/contacts-view.png)
+
+### Anrufliste — Verlauf mit Richtungsfilter
+![Anrufliste](docs/screenshots/history-view.png)
+
+### Callcenter — Dashboard mit KPIs und Team-Übersicht
+![Callcenter](docs/screenshots/callcenter-view.png)
+
+### Einstellungen — Theme, Audio, Telefonie, Teams
+![Einstellungen](docs/screenshots/settings-view.png)
+
+### Tastaturkürzel — Übersicht aller Hotkeys (F1)
+![Tastaturkürzel](docs/screenshots/keyboard-shortcuts.png)
 
 ---
 

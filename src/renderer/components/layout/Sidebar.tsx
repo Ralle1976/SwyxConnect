@@ -9,6 +9,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  HelpCircle,
 } from 'lucide-react'
 import { useSettingsStore } from '../../stores/useSettingsStore'
 import { useHistoryStore, getMissedCount } from '../../stores/useHistoryStore'
@@ -23,7 +24,7 @@ interface NavItem {
   badge?: number
 }
 
-export function Sidebar() {
+export function Sidebar({ onShowHelp }: { onShowHelp?: () => void }) {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed)
   const entries = useHistoryStore((s) => s.entries)
@@ -102,6 +103,19 @@ export function Sidebar() {
             </span>
           )}
         </div>
+
+        {/* Hilfe-Button */}
+        <button
+          type="button"
+          onClick={onShowHelp}
+          title="Tastaturkürzel anzeigen (F1 oder ?)"
+          className={`flex items-center gap-2 mx-2 px-3 py-2 rounded-lg text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${collapsed ? 'justify-center' : ''}`}
+        >
+          <HelpCircle size={16} className="flex-shrink-0" />
+          {!collapsed && (
+            <span className="text-xs truncate">Tastaturkürzel</span>
+          )}
+        </button>
 
         {/* Collapse toggle */}
         <button

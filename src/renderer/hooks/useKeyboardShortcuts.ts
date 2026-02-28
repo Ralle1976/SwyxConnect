@@ -10,8 +10,10 @@ import { useCall } from './useCall'
  *   F7  → Halten / Wiederaufnehmen (aktive oder gehaltene Leitung)
  *   F8  → Stummschalten (aktive Leitung)
  *   Esc → Aktiven Anruf beenden
+ *   F1  → Tastaturkürzel-Hilfe anzeigen
+ *   ?   → Tastaturkürzel-Hilfe anzeigen
  */
-export function useKeyboardShortcuts(): void {
+export function useKeyboardShortcuts(onShowHelp?: () => void): void {
   const lines = useLineStore((s) => s.lines)
   const { answer, hangup, hold, unhold, mute, unmute } = useCall()
 
@@ -73,10 +75,21 @@ export function useKeyboardShortcuts(): void {
           }
           break
         }
+
+        case 'F1': {
+          e.preventDefault()
+          onShowHelp?.()
+          break
+        }
+
+        case '?': {
+          onShowHelp?.()
+          break
+        }
       }
     }
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [lines, answer, hangup, hold, unhold, mute, unmute])
+  }, [lines, answer, hangup, hold, unhold, mute, unmute, onShowHelp])
 }
