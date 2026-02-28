@@ -3,10 +3,12 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { BridgeManager } from './bridge/BridgeManager'
 import { TrayIcon } from './tray'
-import { registerIpcHandlers } from './ipc/handlers'
+import { registerIpcHandlers, registerTeamsIpcHandlers } from './ipc/handlers'
 import { SettingsStore } from './services/SettingsStore'
 import { NotificationService } from './services/NotificationService'
 import { BridgeState, CallDetails, LineState } from '../shared/types'
+import { PresenceStatus } from '../shared/types'
+import { TeamsPresenceService } from './services/TeamsPresenceService'
 import { IPC_CHANNELS } from '../shared/constants'
 
 let mainWindow: BrowserWindow | null = null
@@ -14,6 +16,7 @@ let isQuitting = false
 const bridgeManager = new BridgeManager()
 const settingsStore = new SettingsStore()
 let trayIcon: TrayIcon | null = null
+const teamsService = new TeamsPresenceService()
 
 function getMainWindow(): BrowserWindow | null {
   return mainWindow
@@ -181,6 +184,7 @@ function createMainWindow(): BrowserWindow {
 
 app.on('before-quit', () => {
   isQuitting = true
+  teamsService.stop()
   bridgeManager.stop()
   settingsStore.flush()
 })
@@ -188,6 +192,7 @@ app.on('before-quit', () => {
 // Register IPC handlers early (before whenReady) so they are available
 // as soon as the renderer makes its first invoke calls.
 registerIpcHandlers(bridgeManager, settingsStore, getMainWindow)
+registerTeamsIpcHandlers(teamsService, getMainWindow)
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.ralle197.swyxconnect')
@@ -243,6 +248,41 @@ app.whenReady().then(() => {
 
   console.log('[Main] Bridge wird gestartet...')
   bridgeManager.start()
+
+  // ── Teams Presence: Bidirektionale Synchronisierung ──────────────────────
+  // Konfiguration aus Settings laden
+  const teamsClientId = settingsStore.get('teamsTokens')?.userId
+  if (teamsClientId) {
+    teamsService.setClientId(teamsClientId)
+  }
+
+  // Wenn Bridge presenceChanged meldet → an Teams pushen
+  bridgeManager.on('event', (evt) => {
+    if (evt.method === 'presenceChanged' && evt.params && settingsStore.get('teamsEnabled')) {
+      const params = evt.params as Record<string, unknown>
+      const status = params['status'] as PresenceStatus | undefined
+      if (status) {
+        teamsService.pushSwyxStatus(status).catch((err: Error) => {
+          console.error('[Main] Teams Push fehlgeschlagen:', err.message)
+        })
+      }
+    }
+  })
+
+  // Wenn Teams presenceChanged meldet → an Swyx Bridge senden
+  teamsService.on('presenceChanged', (data: { swyxStatus?: PresenceStatus }) => {
+    if (data.swyxStatus && settingsStore.get('teamsEnabled')) {
+      bridgeManager.sendRequest('setPresence', { status: data.swyxStatus }).catch((err: Error) => {
+        console.error('[Main] Swyx Presence Push fehlgeschlagen:', err.message)
+      })
+    }
+  })
+
+  // Teams auto-start wenn in Settings aktiviert
+  if (settingsStore.get('teamsEnabled')) {
+    console.log('[Main] Teams-Integration aktiviert, starte Synchronisierung...')
+    teamsService.start()
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

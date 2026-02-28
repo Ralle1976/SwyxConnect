@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useLineStore } from '../stores/useLineStore';
+import { useSettingsStore } from '../stores/useSettingsStore';
 import { LineState } from '../types/swyx';
 
 export interface CallHookResult {
@@ -20,12 +21,23 @@ export function useCall(): CallHookResult {
   const setDialedNumber = useLineStore((s) => s.setDialedNumber);
 
   const dial = useCallback(async (number: string) => {
+    // Amtsholung: Präfix für externe Anrufe hinzufügen
+    let dialNumber = number;
+    const { externalLinePrefixEnabled, externalLinePrefix } = useSettingsStore.getState();
+    if (externalLinePrefixEnabled && externalLinePrefix && dialNumber.length > 0) {
+      // Präfix nur hinzufügen wenn die Nummer nicht bereits damit beginnt
+      // und nicht mit + oder * oder # anfängt (Sonderzeichen/international)
+      if (!dialNumber.startsWith(externalLinePrefix) && !dialNumber.startsWith('+') && !dialNumber.startsWith('*') && !dialNumber.startsWith('#')) {
+        dialNumber = externalLinePrefix + dialNumber;
+      }
+    }
+
     // Gewählte Nummer SOFORT speichern bevor COM antwortet
     // Wir wissen noch nicht welche Leitung, daher auf selectedLine oder 0 setzen
     const selectedId = useLineStore.getState().selectedLineId ?? 0;
-    setDialedNumber(selectedId, number);
+    setDialedNumber(selectedId, dialNumber);
 
-    await window.swyxApi.dial(number);
+    await window.swyxApi.dial(dialNumber);
     // Sofort nach dem Wählen den Leitungsstatus abfragen und UI aktualisieren
     try {
       const result = await window.swyxApi.getLines();
@@ -39,7 +51,7 @@ export function useCall(): CallHookResult {
           (l) => l.state !== 'Inactive' && l.state !== 'Terminated' && l.state !== 'Disabled'
         );
         if (active) {
-          setDialedNumber(active.id, number);
+          setDialedNumber(active.id, dialNumber);
         }
       }
     } catch {

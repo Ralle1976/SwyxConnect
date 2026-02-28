@@ -13,6 +13,7 @@ import {
 } from '../../shared/types';
 import { BridgeManager } from '../bridge/BridgeManager';
 import { SettingsStore } from '../services/SettingsStore';
+import { TeamsPresenceService, TeamsAccount } from '../services/TeamsPresenceService';
 
 export function registerIpcHandlers(
   bridgeManager: BridgeManager,
@@ -166,5 +167,60 @@ export function registerIpcHandlers(
       default:
         break;
     }
+  });
+}
+
+// ─── Teams Integration IPC ─────────────────────────────────────────────────
+
+export function registerTeamsIpcHandlers(
+  teamsService: TeamsPresenceService,
+  getMainWindow: () => BrowserWindow | null
+): void {
+  ipcMain.handle(IPC_CHANNELS.TEAMS_ADD_ACCOUNT, async () => {
+    const win = getMainWindow();
+    return teamsService.addAccount(win);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_REMOVE_ACCOUNT, async (_event, accountId: string) => {
+    teamsService.removeAccount(accountId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_GET_ACCOUNTS, () => {
+    return teamsService.getAccounts();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_SET_CLIENT_ID, (_event, clientId: string) => {
+    teamsService.setClientId(clientId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_SET_ENABLED, (_event, enabled: boolean) => {
+    if (enabled) {
+      teamsService.start();
+    } else {
+      teamsService.stop();
+    }
+  });
+
+  // Teams Events → Renderer
+  teamsService.on('deviceCode', (data) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_DEVICE_CODE, data);
+  });
+
+  teamsService.on('presenceChanged', (data) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_PRESENCE_CHANGED, data);
+  });
+
+  teamsService.on('accountAdded', (account: TeamsAccount) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_ACCOUNT_ADDED, account);
+  });
+
+  teamsService.on('accountRemoved', (accountId: string) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_ACCOUNT_REMOVED, accountId);
+  });
+
+  teamsService.on('error', (error: Error) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_ERROR, {
+      message: error.message,
+    });
   });
 }

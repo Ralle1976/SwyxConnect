@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Users, Star, Plus, Pencil, Trash2, Phone, Building2, Mail } from 'lucide-react';
 import { useContactStore } from '../../stores/useContactStore';
 import { useLocalContactStore, LocalContact } from '../../stores/useLocalContactStore';
@@ -31,9 +31,21 @@ export default function ContactsView(): React.JSX.Element {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<LocalContact | undefined>(undefined);
 
+  // Kontakte laden: bei Suchänderung UND initial beim Mounten
   useEffect(() => {
     searchContacts(searchQuery);
   }, [searchQuery, searchContacts]);
+
+  // Retry-Mechanismus: Wenn beim ersten Laden keine Kontakte kamen (Bridge noch nicht bereit),
+  // nach kurzer Verzögerung erneut versuchen
+  useEffect(() => {
+    if (contacts.length === 0 && !loading) {
+      const retryTimer = setTimeout(() => {
+        searchContacts(searchQuery);
+      }, 3000);
+      return () => clearTimeout(retryTimer);
+    }
+  }, [contacts.length, loading, searchContacts, searchQuery]);
 
   function handleSearchChange(value: string): void {
     setQuery(value);

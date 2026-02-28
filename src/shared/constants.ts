@@ -27,6 +27,12 @@ export const IPC_CHANNELS = {
   MUTE: 'swyx:mute',
   UNMUTE: 'swyx:unmute',
   SET_NUMBER_OF_LINES: 'swyx:setNumberOfLines',
+  // Teams Integration (renderer → main)
+  TEAMS_ADD_ACCOUNT: 'swyx:teamsAddAccount',
+  TEAMS_REMOVE_ACCOUNT: 'swyx:teamsRemoveAccount',
+  TEAMS_GET_ACCOUNTS: 'swyx:teamsGetAccounts',
+  TEAMS_SET_CLIENT_ID: 'swyx:teamsSetClientId',
+  TEAMS_SET_ENABLED: 'swyx:teamsSetEnabled',
   // Event channels (main → renderer)
   LINE_STATE_CHANGED: 'swyx:lineStateChanged',
   BRIDGE_STATE_CHANGED: 'swyx:bridgeStateChanged',
@@ -34,6 +40,11 @@ export const IPC_CHANNELS = {
   PRESENCE_CHANGED: 'swyx:presenceChanged',
   CALL_ENDED: 'swyx:callEnded',
   HEARTBEAT: 'swyx:heartbeat',
+  TEAMS_DEVICE_CODE: 'swyx:teamsDeviceCode',
+  TEAMS_PRESENCE_CHANGED: 'swyx:teamsPresenceChanged',
+  TEAMS_ACCOUNT_ADDED: 'swyx:teamsAccountAdded',
+  TEAMS_ACCOUNT_REMOVED: 'swyx:teamsAccountRemoved',
+  TEAMS_ERROR: 'swyx:teamsError',
 } as const;
 
 export type IpcChannelKey = keyof typeof IPC_CHANNELS;

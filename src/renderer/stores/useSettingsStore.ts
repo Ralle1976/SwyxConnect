@@ -16,6 +16,8 @@ interface SettingsStoreState {
   audioOutputVolume: number;
   teamsEnabled: boolean;
   numberOfLines: number;
+  externalLinePrefix: string;
+  externalLinePrefixEnabled: boolean;
   // Actions
   setTheme: (theme: Theme) => void;
   toggleSidebar: () => void;
@@ -28,6 +30,8 @@ interface SettingsStoreState {
   setAudioOutputVolume: (volume: number) => void;
   setTeamsEnabled: (enabled: boolean) => void;
   setNumberOfLines: (count: number) => void;
+  setExternalLinePrefix: (prefix: string) => void;
+  setExternalLinePrefixEnabled: (enabled: boolean) => void;
   // Sync mit Main Process
   loadFromMain: () => Promise<void>;
   saveToMain: (patch: Partial<AppSettings>) => Promise<void>;
@@ -46,6 +50,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
       audioOutputVolume: 80,
       teamsEnabled: false,
       numberOfLines: 2,
+      externalLinePrefix: '0',
+      externalLinePrefixEnabled: true,
 
       setTheme: (theme) => {
         set({ theme });
@@ -97,6 +103,14 @@ export const useSettingsStore = create<SettingsStoreState>()(
           window.swyxApi.setNumberOfLines(count).catch(() => {});
         }
       },
+      setExternalLinePrefix: (prefix) => {
+        set({ externalLinePrefix: prefix });
+        get().saveToMain({ externalLinePrefix: prefix } as Partial<AppSettings>);
+      },
+      setExternalLinePrefixEnabled: (enabled) => {
+        set({ externalLinePrefixEnabled: enabled });
+        get().saveToMain({ externalLinePrefixEnabled: enabled } as Partial<AppSettings>);
+      },
 
       loadFromMain: async () => {
         if (!window.swyxApi) return;
@@ -114,6 +128,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
               audioOutputVolume: settings.audioOutputVolume ?? 80,
               teamsEnabled: settings.teamsEnabled ?? false,
               numberOfLines: ((settings as Record<string, unknown>).numberOfLines as number | undefined) ?? 2,
+              externalLinePrefix: ((settings as Record<string, unknown>).externalLinePrefix as string | undefined) ?? '0',
+              externalLinePrefixEnabled: ((settings as Record<string, unknown>).externalLinePrefixEnabled as boolean | undefined) ?? true,
             });
           }
         } catch { /* Bridge noch nicht bereit */ }
@@ -139,6 +155,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
         audioOutputVolume: state.audioOutputVolume,
         teamsEnabled: state.teamsEnabled,
         numberOfLines: state.numberOfLines,
+        externalLinePrefix: state.externalLinePrefix,
+        externalLinePrefixEnabled: state.externalLinePrefixEnabled,
       }),
     }
   )

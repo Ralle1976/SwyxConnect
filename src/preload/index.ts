@@ -73,6 +73,22 @@ const swyxApi = {
   setSettings: (patch: Partial<AppSettings>): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SET_SETTINGS, patch),
 
+  // --- Teams Integration ---
+  teamsAddAccount: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_ADD_ACCOUNT),
+
+  teamsRemoveAccount: (accountId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_REMOVE_ACCOUNT, accountId),
+
+  teamsGetAccounts: (): Promise<unknown[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_GET_ACCOUNTS),
+
+  teamsSetClientId: (clientId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_SET_CLIENT_ID, clientId),
+
+  teamsSetEnabled: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_SET_ENABLED, enabled),
+
   // --- Event Listener ---
   onLineStateChanged: (callback: (lines: LineInfo[]) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, lines: LineInfo[]): void => callback(lines)
@@ -103,6 +119,36 @@ const swyxApi = {
     const handler = (_event: Electron.IpcRendererEvent, data: { lineId: number }): void => callback(data)
     ipcRenderer.on(IPC_CHANNELS.CALL_ENDED, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.CALL_ENDED, handler)
+  },
+
+  onTeamsDeviceCode: (callback: (data: { userCode: string; verificationUri: string; message: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { userCode: string; verificationUri: string; message: string }): void => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_DEVICE_CODE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_DEVICE_CODE, handler)
+  },
+
+  onTeamsPresenceChanged: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_PRESENCE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_PRESENCE_CHANGED, handler)
+  },
+
+  onTeamsAccountAdded: (callback: (account: unknown) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, account: unknown): void => callback(account)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_ACCOUNT_ADDED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_ACCOUNT_ADDED, handler)
+  },
+
+  onTeamsAccountRemoved: (callback: (accountId: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, accountId: string): void => callback(accountId)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_ACCOUNT_REMOVED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_ACCOUNT_REMOVED, handler)
+  },
+
+  onTeamsError: (callback: (error: { message: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, error: { message: string }): void => callback(error)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_ERROR, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_ERROR, handler)
   },
 } as const
 

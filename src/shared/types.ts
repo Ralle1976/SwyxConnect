@@ -149,6 +149,8 @@ export interface AppSettings {
   startMinimized: boolean;
   closeToTray: boolean;
   numberOfLines: number;
+  externalLinePrefix: string;
+  externalLinePrefixEnabled: boolean;
 }
 
 export interface TeamsTokens {

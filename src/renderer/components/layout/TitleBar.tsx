@@ -43,7 +43,10 @@ export function TitleBar() {
       {/* Left: App name + status */}
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold tracking-wider text-zinc-700 dark:text-zinc-300 uppercase">
-          SwyIt
+          SwyxConnect
+        </span>
+        <span className="text-[9px] font-normal tracking-wide text-zinc-400 dark:text-zinc-500 lowercase">
+          by Ralle1976
         </span>
         <div className="flex items-center gap-1">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`} />

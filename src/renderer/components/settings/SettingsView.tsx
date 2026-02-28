@@ -263,6 +263,8 @@ export default function SettingsView() {
     audioOutputVolume,
     numberOfLines,
     teamsEnabled,
+    externalLinePrefix,
+    externalLinePrefixEnabled,
     setTheme,
     toggleSidebar,
     setStartMinimized,
@@ -273,6 +275,8 @@ export default function SettingsView() {
     setAudioOutputVolume,
     setNumberOfLines,
     setTeamsEnabled,
+    setExternalLinePrefix,
+    setExternalLinePrefixEnabled,
   } = useSettingsStore()
 
   // Audio-Geräte enumerieren
@@ -460,10 +464,24 @@ export default function SettingsView() {
           />
 
           {teamsEnabled && (
-            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2">
-              <p className="text-xs text-amber-700 dark:text-amber-400">
-                Teams-Integration wird in einem zukünftigen Update verfügbar. Die Einstellung wird gespeichert.
-              </p>
+            <div className="flex flex-col gap-3">
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 px-3 py-2">
+                <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
+                  Verbindet Ihren Swyx-Status bidirektional mit Microsoft Teams.
+                  Wenn Sie in SwyxConnect telefonieren, wird Ihr Teams-Status automatisch auf
+                  \u201eBeschäftigt\u201c gesetzt \u2014 und umgekehrt.
+                </p>
+                <p className="text-xs text-blue-600 dark:text-blue-500 mt-1.5">
+                  Mehrere Teams-Konten (privat/geschäftlich) werden unterstützt.
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2">
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Voraussetzung: Azure AD App-Registrierung mit Presence.ReadWrite-Berechtigung.
+                  Konto-Verwaltung folgt im nächsten Update.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -471,18 +489,41 @@ export default function SettingsView() {
 
       {/* ─── Telefonie ─────────────────────────────────────────────────── */}
       <SectionCard title="Telefonie" icon={<Phone size={16} />}>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between py-1">
-            <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">SwyxIt!-Client</span>
-            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Wird automatisch gestartet</span>
-          </div>
-          <div className="flex items-center justify-between py-1">
-            <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">Swyx-Verbindung</span>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">Über lokalen Client Line Manager (COM)</span>
-          </div>
-          <div className="flex items-center justify-between py-1">
-            <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">Fensterunterdrückung</span>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">SwyxIt!-Fenster wird automatisch minimiert</span>
+        <div className="flex flex-col gap-3">
+          {/* Amtsholung */}
+          <ToggleRow
+            label="Amtsholung (externe Vorwahl)"
+            description={`Automatisch eine ${externalLinePrefix || '0'} vor externe Nummern setzen`}
+            value={externalLinePrefixEnabled}
+            onChange={setExternalLinePrefixEnabled}
+          />
+
+          {externalLinePrefixEnabled && (
+            <div className="flex items-center gap-2 pl-4">
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Präfix:</span>
+              <input
+                type="text"
+                value={externalLinePrefix}
+                onChange={(e) => setExternalLinePrefix(e.target.value)}
+                maxLength={3}
+                className="w-16 text-center text-xs px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"
+              />
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex flex-col gap-2">
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">SwyxIt!-Client</span>
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Wird automatisch gestartet</span>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">Swyx-Verbindung</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Über lokalen Client Line Manager (COM)</span>
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">Fensterunterdrückung</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">SwyxIt!-Fenster wird automatisch minimiert</span>
+            </div>
           </div>
         </div>
       </SectionCard>
@@ -490,7 +531,7 @@ export default function SettingsView() {
       {/* ─── Über ──────────────────────────────────────────────────────── */}
       <SectionCard title="Über SwyxConnect" icon={<Info size={16} />}>
         <div className="flex flex-col gap-1.5">
-          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">SwyxConnect</p>
+          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">SwyxConnect <span className="text-xs font-normal text-zinc-400 dark:text-zinc-500">by Ralle1976</span></p>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">Version 1.0.0</p>
           <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 leading-relaxed">
             Moderner Desktop-Softphone-Client für Swyx/Enreach. Ersetzt die klassische SwyxIt!-Oberfläche
