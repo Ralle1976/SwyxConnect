@@ -285,6 +285,36 @@ static class Program
             return;
         }
 
+        // --- SIP REGISTER Probe ---
+        if (req.Method == "probeSipRegister")
+        {
+            try
+            {
+                string host = "127.0.0.1", username = "Ralf Arnold";
+                int port = 5060;
+
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var p = req.Params.Value;
+                    if (p.TryGetProperty("host", out var h) && h.GetString() is string hv) host = hv;
+                    if (p.TryGetProperty("port", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) port = pt.GetInt32();
+                    if (p.TryGetProperty("username", out var un) && un.GetString() is string uv) username = uv;
+                }
+
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        var result = await NetworkProbe.ProbeSipRegisterAsync(host, port, username);
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, result);
+                    }
+                    catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
+        }
+
         // --- Handler Dispatch ---
         if (_callHandler?.CanHandle(req.Method) == true) { _callHandler.Handle(req); }
         else if (_presenceHandler?.CanHandle(req.Method) == true) { _presenceHandler.Handle(req); }

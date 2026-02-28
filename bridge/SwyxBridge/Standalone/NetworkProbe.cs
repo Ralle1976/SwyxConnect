@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Linq;
 using SwyxBridge.Utils;
 
 namespace SwyxBridge.Standalone;
@@ -25,6 +26,9 @@ public static class NetworkProbe
 
         var localSipUdp = await ProbeUdpSipAsync("127.0.0.1", 5060);
         results["localSip5060"] = localSipUdp;
+
+        var localSipRegister = await ProbeSipRegisterAsync("127.0.0.1", 5060, "Ralf Arnold");
+        results["localSipRegister5060"] = localSipRegister;
 
         var localPort9100 = await ProbeTcpPortAsync("127.0.0.1", 9100, "CLMgr-9100");
         results["localPort9100"] = localPort9100;
@@ -329,6 +333,269 @@ public static class NetworkProbe
             };
         }
         catch (Exception ex) { return new { protocol = "WCF/net.tcp", error = ex.Message }; }
+    }
+
+    /// <summary>
+    /// SIP REGISTER Probe über UDP. Sendet unauthentifiziertes REGISTER
+    /// und analysiert die 401-Antwort (WWW-Authenticate Header = Auth-Mechanismus).
+    /// </summary>
+    public static async Task<object> ProbeSipRegisterAsync(string host, int port, string username)
+    {
+        var results = new Dictionary<string, object>
+        {
+            ["host"] = host,
+            ["port"] = port,
+            ["username"] = username,
+            ["protocol"] = "SIP/UDP"
+        };
+
+        // Generate consistent identifiers
+        var callId = $"reg-{Guid.NewGuid():N}";
+        var tag = $"t{Environment.TickCount:x8}";
+        var branch = $"z9hG4bK-reg-{Environment.TickCount}";
+        var localPort = 15060;
+
+        // --- Step 1: Unauthenticated REGISTER ---
+        var registerMsg =
+            $"REGISTER sip:{host} SIP/2.0\r\n" +
+            $"Via: SIP/2.0/UDP 127.0.0.1:{localPort};branch={branch};rport\r\n" +
+            $"Max-Forwards: 70\r\n" +
+            $"From: <sip:{username.Replace(" ", ".")}@{host}>;tag={tag}\r\n" +
+            $"To: <sip:{username.Replace(" ", ".")}@{host}>\r\n" +
+            $"Call-ID: {callId}@127.0.0.1\r\n" +
+            $"CSeq: 1 REGISTER\r\n" +
+            $"Contact: <sip:{username.Replace(" ", ".")}@127.0.0.1:{localPort};transport=udp>\r\n" +
+            $"Expires: 3600\r\n" +
+            $"User-Agent: SwyxConnect/1.0\r\n" +
+            $"Allow: INVITE,ACK,BYE,CANCEL,OPTIONS,NOTIFY,REFER,INFO,SUBSCRIBE,UPDATE\r\n" +
+            $"Content-Length: 0\r\n\r\n";
+
+        try
+        {
+            using var udp = new UdpClient(0);  // ephemeral port
+            var data = Encoding.UTF8.GetBytes(registerMsg);
+            await udp.SendAsync(data, data.Length, host, port);
+
+            udp.Client.ReceiveTimeout = 5000;
+
+            // Read responses in a loop — SIP servers send 100 Trying first, then final response
+            var allResponses = new List<string>();
+            string? finalResponse = null;
+            int finalStatusCode = 0;
+            var deadline = DateTime.UtcNow.AddSeconds(8);
+
+            while (DateTime.UtcNow < deadline)
+            {
+                var recvTask = udp.ReceiveAsync();
+                var remaining = deadline - DateTime.UtcNow;
+                if (remaining.TotalMilliseconds < 100) break;
+                if (await Task.WhenAny(recvTask, Task.Delay((int)remaining.TotalMilliseconds)) != recvTask)
+                    break;
+
+                var result = await recvTask;
+                var responseText = Encoding.UTF8.GetString(result.Buffer);
+                allResponses.Add(responseText);
+
+                var lines = responseText.Split('\n');
+                var statusLine = lines.Length > 0 ? lines[0].Trim() : "";
+                var parts = statusLine.Split(' ', 3);
+                if (parts.Length >= 2 && int.TryParse(parts[1], out int sc))
+                {
+                    if (sc >= 200)  // Final response (2xx, 3xx, 4xx, 5xx, 6xx)
+                    {
+                        finalResponse = responseText;
+                        finalStatusCode = sc;
+                        break;  // Got final answer
+                    }
+                    // 1xx = provisional, keep reading
+                }
+            }
+
+            results["registerSent"] = true;
+            results["responsesReceived"] = allResponses.Count;
+
+            if (allResponses.Count == 0)
+            {
+                results["timeout"] = true;
+                results["note"] = "Keine Antwort auf REGISTER";
+            }
+            else
+            {
+                // Use final response if available, otherwise first response
+                var targetResponse = finalResponse ?? allResponses[0];
+                var targetLines = targetResponse.Split('\n');
+                var targetStatusLine = targetLines.Length > 0 ? targetLines[0].Trim() : "";
+                var targetParts = targetStatusLine.Split(' ', 3);
+                int statusCode = finalStatusCode;
+                if (statusCode == 0 && targetParts.Length >= 2)
+                    int.TryParse(targetParts[1], out statusCode);
+
+                results["statusLine"] = targetStatusLine;
+                results["statusCode"] = statusCode;
+
+                if (statusCode == 200)
+                {
+                    results["registered"] = true;
+                    results["note"] = "Registrierung ohne Auth erfolgreich (unüblich)";
+                }
+                else if (statusCode == 401 || statusCode == 407)
+                {
+                    results["challengeReceived"] = true;
+
+                    // Parse WWW-Authenticate / Proxy-Authenticate
+                    var authHeaders = new List<string>();
+                    foreach (var line in targetLines)
+                    {
+                        var trimmed = line.Trim();
+                        if (trimmed.StartsWith("WWW-Authenticate:", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.StartsWith("Proxy-Authenticate:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            authHeaders.Add(trimmed);
+                        }
+                    }
+                    results["authHeaders"] = authHeaders.ToArray();
+
+                    // Extract auth scheme (Digest, NTLM, etc.)
+                    var schemes = new List<string>();
+                    foreach (var hdr in authHeaders)
+                    {
+                        var colonIdx = hdr.IndexOf(':');
+                        if (colonIdx > 0)
+                        {
+                            var value = hdr[(colonIdx + 1)..].TrimStart();
+                            var scheme = value.Split(' ', 2)[0];
+                            schemes.Add(scheme);
+                        }
+                    }
+                    results["authSchemes"] = schemes.ToArray();
+
+                    // Extract realm and nonce if Digest
+                    foreach (var hdr in authHeaders)
+                    {
+                        var colonIdx = hdr.IndexOf(':');
+                        if (colonIdx <= 0) continue;
+                        var value = hdr[(colonIdx + 1)..].TrimStart();
+
+                        var realmIdx = value.IndexOf("realm=", StringComparison.OrdinalIgnoreCase);
+                        if (realmIdx >= 0)
+                        {
+                            var realmStart = value.IndexOf('"', realmIdx);
+                            var realmEnd = realmStart > 0 ? value.IndexOf('"', realmStart + 1) : -1;
+                            if (realmStart > 0 && realmEnd > realmStart)
+                                results["realm"] = value[(realmStart + 1)..realmEnd];
+                        }
+
+                        var nonceIdx = value.IndexOf("nonce=", StringComparison.OrdinalIgnoreCase);
+                        if (nonceIdx >= 0)
+                        {
+                            results["hasNonce"] = true;
+                        }
+
+                        var algorithmIdx = value.IndexOf("algorithm=", StringComparison.OrdinalIgnoreCase);
+                        if (algorithmIdx >= 0)
+                        {
+                            var algStart = value.IndexOf('=', algorithmIdx) + 1;
+                            var algVal = value[algStart..].Split(new[] { ',', ' ', '\r', '\n' }, 2)[0].Trim('"');
+                            results["algorithm"] = algVal;
+                        }
+                    }
+                }
+                else if (statusCode >= 100 && statusCode < 200)
+                {
+                    results["provisionalOnly"] = true;
+                    results["note"] = $"Nur provisorische Antwort erhalten ({statusCode}) — kein finaler Response";
+                }
+                else
+                {
+                    results["note"] = $"Unerwarteter Status: {statusCode}";
+                }
+
+                // Full response (truncated)
+                results["fullResponse"] = targetResponse.Length > 1500 ? targetResponse[..1500] : targetResponse;
+
+                // All raw responses for debugging
+                if (allResponses.Count > 1)
+                    results["allStatusLines"] = allResponses.Select(r => r.Split('\n')[0].Trim()).ToArray();
+            }
+        }
+        catch (Exception ex)
+        {
+            results["error"] = $"{ex.GetType().Name}: {ex.Message}";
+        }
+
+        return results;
+    }
+
+    /// <summary>TCP SIP REGISTER Probe (Fallback wenn UDP keine Antwort liefert).</summary>
+    private static async Task<object> ProbeSipRegisterTcpAsync(string host, int port, string username, string callId, string tag)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            var connectTask = client.ConnectAsync(host, port);
+            if (await Task.WhenAny(connectTask, Task.Delay(3000)) != connectTask)
+                return new { protocol = "SIP/TCP", connected = false, reason = "connect timeout" };
+            await connectTask;
+
+            var stream = client.GetStream();
+            stream.ReadTimeout = 5000;
+
+            var branch = $"z9hG4bK-reg-tcp-{Environment.TickCount}";
+            var registerMsg =
+                $"REGISTER sip:{host} SIP/2.0\r\n" +
+                $"Via: SIP/2.0/TCP 127.0.0.1:15060;branch={branch};rport\r\n" +
+                $"Max-Forwards: 70\r\n" +
+                $"From: <sip:{username.Replace(" ", ".")}@{host}>;tag={tag}-tcp\r\n" +
+                $"To: <sip:{username.Replace(" ", ".")}@{host}>\r\n" +
+                $"Call-ID: {callId}-tcp@127.0.0.1\r\n" +
+                $"CSeq: 1 REGISTER\r\n" +
+                $"Contact: <sip:{username.Replace(" ", ".")}@127.0.0.1:15060;transport=tcp>\r\n" +
+                $"Expires: 3600\r\n" +
+                $"User-Agent: SwyxConnect/1.0\r\n" +
+                $"Content-Length: 0\r\n\r\n";
+
+            var data = Encoding.UTF8.GetBytes(registerMsg);
+            await stream.WriteAsync(data);
+            await stream.FlushAsync();
+
+            var buf = new byte[4096];
+            var readTask = stream.ReadAsync(buf, 0, buf.Length);
+            if (await Task.WhenAny(readTask, Task.Delay(5000)) == readTask)
+            {
+                int read = await readTask;
+                if (read > 0)
+                {
+                    var responseText = Encoding.UTF8.GetString(buf, 0, read);
+                    var statusLine = responseText.Split('\n')[0].Trim();
+
+                    // Parse auth headers
+                    var authHeaders = new List<string>();
+                    foreach (var line in responseText.Split('\n'))
+                    {
+                        var trimmed = line.Trim();
+                        if (trimmed.StartsWith("WWW-Authenticate:", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.StartsWith("Proxy-Authenticate:", StringComparison.OrdinalIgnoreCase))
+                            authHeaders.Add(trimmed);
+                    }
+
+                    return new
+                    {
+                        protocol = "SIP/TCP",
+                        connected = true,
+                        statusLine,
+                        responseLength = read,
+                        authHeaders = authHeaders.ToArray(),
+                        fullResponse = responseText.Length > 1500 ? responseText[..1500] : responseText
+                    };
+                }
+                return new { protocol = "SIP/TCP", connected = true, statusLine = "(empty response)", responseLength = 0, authHeaders = Array.Empty<string>(), fullResponse = "" };
+            }
+            return new { protocol = "SIP/TCP", connected = true, statusLine = "(read timeout)", responseLength = 0, authHeaders = Array.Empty<string>(), fullResponse = "" };
+        }
+        catch (Exception ex)
+        {
+            return new { protocol = "SIP/TCP", connected = false, reason = ex.Message };
+        }
     }
 
     /// <summary>Swyx-Prozesse erkennen.</summary>

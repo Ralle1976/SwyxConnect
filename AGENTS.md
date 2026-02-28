@@ -649,9 +649,59 @@ CLMgr exponiert lokal: CDS auf :9094, SIP auf :5060, RTP auf :40000-40009
 | 15021/TCP | OPEN | Proprietärer Tunnel — kein TLS, kein SIP |
 | 8021/TCP | OPEN | Microsoft-HTTPAPI/2.0, /IpPbx/* → 503 |
 
+### SIP REGISTER Probe-Ergebnisse
+
+#### Ergebnis (SIP/UDP auf localhost:5060, User 'Ralf Arnold')
+```
+Responses: 2 (100 Trying → 403 Forbidden)
+Status: SIP/2.0 403 Forbidden
+Warning: 399 172.18.3.202 "access denied"
+User-Agent: Swyx IpPbxSrv/14.25 (Swyx.Core_14.25_20251125.1)
+Path: <sip:127.0.0.1:5060;transport=udp;lr>
+```
+
+#### Erkenntnis: SIP Auth Flow
+SwyxWare nutzt **KEIN** Standard SIP Digest Auth (401 Challenge-Response).
+Stattdessen ist der korrekte Ablauf:
+
+1. **CDS Login** (`net.tcp://localhost:9094/ConfigDataStore/CLoginImpl.none`)
+   - `AcquireToken(Credentials{UserName, Password})` → `AuthenticationResult{AccessToken, RefreshToken, UserId}`
+2. **SIP-Credentials abrufen** (`IPhoneClientFacade.GetSipCredentials(userId)`)
+   - Liefert: `SipRealm`, `SipUserID`, `SipUserName`, `SipPasswordHash`
+3. **SIP REGISTER** mit pre-shared Credentials aus CDS
+   - Ohne vorherige CDS-Auth → `403 Forbidden` (kein Challenge, kein WWW-Authenticate)
+
+#### Decompiled: TUserSipCredentialsShort
+```csharp
+// Namespace: SWConfigDataClientLib.WSPhoneClientFacade
+public class TUserSipCredentialsShort {
+    public string SipRealm { get; set; }      // Digest realm
+    public string SipUserID { get; set; }      // SIP URI user part
+    public string SipUserName { get; set; }    // Display name
+    public int UserID { get; set; }            // CDS user ID
+}
+```
+
+#### Decompiled: IPhoneClientFacade (Auszug)
+```csharp
+// WCF Endpoint: net.tcp://localhost:9094/ConfigDataStore/PhoneClientFacadeImpl.*
+[ServiceContract]
+interface IPhoneClientFacade {
+    TUserSipCredentialsShort GetSipCredentials(int userId);
+    int GetCurrentUserID();
+    int GetCurrentUserName(out string UserName);
+    ServerInfo GetServerInfo();
+    string GetSwyxAccessToken();
+    FeatureProfile GetFeatureProfile(int userId);
+    // ... 60+ weitere Methoden
+}
+```
+
 ### Nächste Schritte (Standalone)
 
-1. **CDS WCF Login implementieren** — net.tcp auf localhost:9094, AcquireToken mit Username/Password
-2. **SIP REGISTER durch CLMgr** — SIP auf localhost:5060 nach erfolgreicher CDS-Authentifizierung
-3. **RemoteConnector Auth** — HTTPS auf :8021, danach TCP Tunnel auf :15021 (für Zugang ohne VPN)
-4. **Electron Frontend** an SignalR Hubs anbinden
+1. ~~**CDS WCF Login implementieren**~~ ✅ Ping OK, 31 Versionen
+2. **CDS AcquireToken** — Login mit Username + Password (Passwort via UI)
+3. **GetSipCredentials** — SIP-Credentials vom CDS holen (nach Login)
+4. **SIP REGISTER mit Auth** — Pre-shared Credentials aus Schritt 3 verwenden
+5. **RemoteConnector Auth** — HTTPS auf :8021 für Zugang ohne VPN
+6. **Electron Frontend** an SignalR Hubs anbinden
