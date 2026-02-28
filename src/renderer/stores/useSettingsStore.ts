@@ -91,7 +91,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
       setNumberOfLines: (count) => {
         set({ numberOfLines: count });
         get().saveToMain({ numberOfLines: count } as Partial<AppSettings>);
-        // Sofort an Bridge/COM senden
+        // Sofort an Bridge/COM senden — Bridge emittiert lineStateChanged Event
+        // welches automatisch die Lines im UI aktualisiert
         if (window.swyxApi?.setNumberOfLines) {
           window.swyxApi.setNumberOfLines(count).catch(() => {});
         }

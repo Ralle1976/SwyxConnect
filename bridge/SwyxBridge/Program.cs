@@ -30,6 +30,7 @@ static class Program
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
     private static System.Windows.Forms.Timer? _windowSuppressor;
+    private static WindowHook? _windowHook;
 
     [STAThread]
     static void Main(string[] args)
@@ -82,6 +83,7 @@ static class Program
         Application.Run(appCtx);
         // Cleanup
         Logging.Info("SwyxBridge beendet.");
+        _windowHook?.Dispose();
         _windowSuppressor?.Stop();
         _windowSuppressor?.Dispose();
         _heartbeat?.Stop();
@@ -130,14 +132,31 @@ static class Program
         };
         serverThread.Start();
 
-        // SwyxIt!-Fensterunterdrückung (WinForms Timer → läuft auf STA-Thread)
-        _windowSuppressor = new System.Windows.Forms.Timer { Interval = 1500 };
+        // === SwyxIt!-Fensterunterdrückung ===
+
+        // 1. SetWinEventHook: Reagiert SOFORT auf Fenster-Events (kein Polling)
+        //    Muss auf STA-Thread mit Message Pump installiert werden (genau hier)
+        try
+        {
+            _windowHook = WindowHook.Install();
+            Logging.Info("WindowHook installiert — SwyxIt!-Fenster werden in Echtzeit versteckt.");
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"WindowHook fehlgeschlagen: {ex.Message}. Nur Timer-Fallback aktiv.");
+        }
+
+        // 2. Timer-Fallback: fängt Fenster ab die dem Hook entgehen (z.B. Toasts, Popups)
+        //    Intervall: 500ms statt 1500ms für schnelleres Verstecken
+        _windowSuppressor = new System.Windows.Forms.Timer { Interval = 500 };
         _windowSuppressor.Tick += (s, e) =>
         {
             _lineManager?.SuppressSwyxWindowPeriodic();
+            // PIDs aktualisieren falls SwyxIt! neu gestartet wurde
+            _windowHook?.RefreshSwyxPids();
         };
         _windowSuppressor.Start();
-        Logging.Info("SwyxIt!-Fensterunterdrückung aktiviert (alle 1.5s).");
+        Logging.Info("SwyxIt!-Fensterunterdrückung: Hook + Timer-Fallback (500ms) aktiv.");
 
         // Connected-Status melden
         JsonRpcEmitter.EmitEvent("bridgeState", new

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, dialog } from 'electron'
+import { app, BrowserWindow, shell, dialog, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { BridgeManager } from './bridge/BridgeManager'
@@ -54,6 +54,14 @@ function createMainWindow(): BrowserWindow {
       nodeIntegration: false,
     },
   })
+
+  // ---------- MEDIA PERMISSION ----------
+  // Audio-Geräte-Zugriff automatisch erlauben (für Mikrofon-Test + Device-Enumeration)
+  win.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const allowed = ['media', 'audioCapture', 'microphone'].includes(permission)
+    callback(allowed)
+  })
+
 
   // ---------- FENSTER SICHER ANZEIGEN ----------
 

@@ -39,12 +39,10 @@ export function useCall(): CallHookResult {
 
   const hangup = useCallback(async (lineId: number) => {
     await window.swyxApi.hangup(lineId);
-    updateLine(lineId, {
-      state: LineState.Inactive,
-      callerName: undefined,
-      callerNumber: undefined,
-      duration: undefined,
-    });
+    // State wird NUR auf Inactive gesetzt — callerName/callerNumber bewusst
+    // NICHT löschen, damit useCallHistoryTracker den Anruf noch erfassen kann.
+    // Die nächste lineStateChanged-Nachricht vom Bridge setzt den vollen State.
+    updateLine(lineId, { state: LineState.Inactive });
   }, [updateLine]);
 
   const hold = useCallback(async (lineId: number) => {

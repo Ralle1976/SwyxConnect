@@ -18,6 +18,17 @@ public sealed class SwyxConnector : IDisposable
 
     // Win32 API
     private const int SW_HIDE = 0;
+    private const int GWL_STYLE = -16;
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_VISIBLE = 0x10000000;
+    private const int WS_EX_TOOLWINDOW = 0x00000080;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_HIDEWINDOW = 0x0080;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+    private const int OFFSCREEN_X = -32000;
+    private const int OFFSCREEN_Y = -32000;
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -33,10 +44,23 @@ public sealed class SwyxConnector : IDisposable
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+    [DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd, IntPtr hWndInsertAfter,
+        int X, int Y, int cx, int cy, uint uFlags);
+
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     // CRITICAL: Static reference prevents GC collection while COM holds reference
     private static SwyxConnector? _instance;
+    private static bool _hideLogged;
 
     private dynamic? _clmgr;
     private bool _disposed;
@@ -167,14 +191,12 @@ public sealed class SwyxConnector : IDisposable
 
     /// <summary>
     /// Versteckt ALLE Fenster aller SwyxIt!-Prozesse.
-    /// Verwendet EnumWindows um auch Popup-, Notification- und Child-Windows zu finden,
-    /// nicht nur MainWindowHandle.
+    /// Dreistufig: 1) Off-screen verschieben (kein Blitz), 2) SW_HIDE, 3) WS_VISIBLE entfernen.
     /// </summary>
     public static void HideAllSwyxItWindows()
     {
         try
         {
-            // Sammle alle SwyxIt!-Prozess-IDs
             var swyxPids = new HashSet<uint>();
             foreach (var proc in Process.GetProcesses())
             {
@@ -182,36 +204,52 @@ public sealed class SwyxConnector : IDisposable
                 {
                     var name = proc.ProcessName.ToLowerInvariant();
                     if (name.Contains("swyxit") || name == "swyxitc")
-                    {
                         swyxPids.Add((uint)proc.Id);
-                    }
                 }
-                catch { /* Zugriff verweigert auf manche System-Prozesse */ }
+                catch { }
             }
 
             if (swyxPids.Count == 0) return;
 
-            int hiddenCount = 0;
-
-            // EnumWindows durchläuft ALLE Top-Level-Fenster im System
-            EnumWindows((hWnd, lParam) =>
+            int count = 0;
+            EnumWindows((hWnd, _) =>
             {
                 try
                 {
                     GetWindowThreadProcessId(hWnd, out uint pid);
-                    if (swyxPids.Contains(pid) && IsWindowVisible(hWnd))
+                    if (swyxPids.Contains(pid))
                     {
+                        // 1. Off-screen + Größe 0 — kein Blitz möglich
+                        SetWindowPos(hWnd, IntPtr.Zero,
+                            OFFSCREEN_X, OFFSCREEN_Y, 0, 0,
+                            SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW | SWP_FRAMECHANGED);
+
+                        // 2. SW_HIDE
                         ShowWindow(hWnd, SW_HIDE);
-                        hiddenCount++;
+
+                        // 3. WS_VISIBLE entfernen
+                        int style = GetWindowLong(hWnd, GWL_STYLE);
+                        if ((style & WS_VISIBLE) != 0)
+                            SetWindowLong(hWnd, GWL_STYLE, style & ~WS_VISIBLE);
+
+                        // 4. Tool-Window + NoActivate
+                        int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+                        int newEx = exStyle | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+                        if (newEx != exStyle)
+                            SetWindowLong(hWnd, GWL_EXSTYLE, newEx);
+
+                        count++;
                     }
                 }
-                catch { /* Ignore */ }
-                return true; // Weiter iterieren
+                catch { }
+                return true;
             }, IntPtr.Zero);
 
-            if (hiddenCount > 0)
+            // Nur beim ersten Mal loggen, danach still
+            if (count > 0 && !_hideLogged)
             {
-                Logging.Info($"SwyxConnector: {hiddenCount} SwyxIt!-Fenster versteckt (SW_HIDE).");
+                Logging.Info($"SwyxConnector: {count} Fenster off-screen + hidden.");
+                _hideLogged = true;
             }
         }
         catch (Exception ex)

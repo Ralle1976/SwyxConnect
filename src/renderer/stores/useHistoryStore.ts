@@ -30,7 +30,17 @@ export const useHistoryStore = create<HistoryStoreState>()(
         try {
           const data = await window.swyxApi.getHistory();
           if (Array.isArray(data) && data.length > 0) {
-            set({ entries: data });
+            // Server-Daten mit lokalen Einträgen mergen (lokale behalten)
+            set((state) => {
+              const existingIds = new Set(state.entries.map((e) => e.id));
+              const newFromServer = data.filter((d: CallHistoryEntry) => !existingIds.has(d.id));
+              // Alle Einträge kombinieren und nach Zeitstempel sortieren
+              const merged = [...state.entries, ...newFromServer].sort(
+                (a, b) => b.timestamp - a.timestamp
+              );
+              // Max 200 Einträge behalten
+              return { entries: merged.slice(0, 200) };
+            });
           }
         } catch {
           // Bridge not available or no history — keep existing entries

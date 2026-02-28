@@ -54,16 +54,15 @@ export function useCallHistoryTracker() {
                 const callerName = metadata.callerName || currentLine.callerName || prevLine?.callerName || '';
                 const callerNumber = metadata.callerNumber || currentLine.callerNumber || prevLine?.callerNumber || '';
 
-                if (callerNumber || callerName) {
-                    addEntry({
-                        id: crypto.randomUUID(),
-                        callerName,
-                        callerNumber: callerNumber || 'Unbekannt',
-                        direction: isMissed ? 'missed' : metadata.direction,
-                        timestamp: metadata.startTime,
-                        duration,
-                    });
-                }
+                // Immer einen Eintrag erstellen — auch wenn nur Richtung bekannt ist
+                addEntry({
+                    id: crypto.randomUUID(),
+                    callerName: callerName || '',
+                    callerNumber: callerNumber || 'Unbekannt',
+                    direction: isMissed ? 'missed' : metadata.direction,
+                    timestamp: metadata.startTime,
+                    duration,
+                });
 
                 callMetadata.current.delete(currentLine.id);
             }

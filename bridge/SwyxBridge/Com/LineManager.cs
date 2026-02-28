@@ -424,29 +424,39 @@ public sealed class LineManager
 
     /// <summary>
     /// Unterdrückt das SwyxIt!-Fenster nach einem Dial-Vorgang.
-    /// Findet SwyxIt! über den Prozessnamen und minimiert/versteckt es.
+    /// Verwendet schnellen Timer statt Thread.Sleep um die Message Pump nicht zu blockieren.
     /// </summary>
     private void SuppressSwyxWindow(IntPtr previousForeground)
     {
-        try
-        {
-            // Kurz warten damit SwyxIt! Zeit hat in den Vordergrund zu kommen
-            Thread.Sleep(150);
+        // Sofort einmal verstecken
+        SwyxConnector.HideAllSwyxItWindows();
 
-            // Alle SwyxIt!-Fenster verstecken (SW_HIDE via EnumWindows)
+        // Schnellen Timer starten: 20x alle 100ms = 2 Sekunden aggressive Unterdrückung
+        int remaining = 20;
+        var timer = new System.Windows.Forms.Timer { Interval = 100 };
+        timer.Tick += (s, e) =>
+        {
             SwyxConnector.HideAllSwyxItWindows();
+            remaining--;
 
-            // Unser Fenster wieder nach vorne bringen
-            if (previousForeground != IntPtr.Zero)
+            if (remaining <= 0)
             {
-                var currentForeground = GetForegroundWindow();
-                if (currentForeground != previousForeground)
-                    SetForegroundWindow(previousForeground);
+                timer.Stop();
+                timer.Dispose();
+
+                // Am Ende: unser Fenster nach vorne
+                if (previousForeground != IntPtr.Zero)
+                {
+                    try
+                    {
+                        var currentForeground = GetForegroundWindow();
+                        if (currentForeground != previousForeground)
+                            SetForegroundWindow(previousForeground);
+                    }
+                    catch { }
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Logging.Warn($"LineManager: SuppressSwyxWindow fehlgeschlagen: {ex.Message}");
-        }
+        };
+        timer.Start();
     }
 }

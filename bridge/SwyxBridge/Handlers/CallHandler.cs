@@ -125,7 +125,10 @@ public sealed class CallHandler
     {
         int count = GetInt(p, "count");
         _lm.SetNumberOfLines(count);
-        return new { ok = true };
+        // Nach dem Setzen: aktualisierte Leitungsdaten zurückgeben UND Event emittieren
+        var linesResult = _lm.GetAllLines();
+        JsonRpcEmitter.EmitEvent("lineStateChanged", linesResult);
+        return linesResult;
     }
 
     // --- Param Helpers ---

@@ -281,6 +281,15 @@ export default function SettingsView() {
 
   const enumerateDevices = useCallback(async () => {
     try {
+      // Erst Mikrofon-Berechtigung anfordern, damit Labels sichtbar werden
+      // getUserMedia triggert den Permission-Dialog in Electron
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        // Stream sofort stoppen — wir brauchen ihn nur für die Berechtigung
+        stream.getTracks().forEach((t) => t.stop())
+      } catch {
+        // Berechtigung verweigert oder kein Mikrofon — trotzdem Geräte auflisten
+      }
       const devices = await navigator.mediaDevices.enumerateDevices()
       setAudioInputs(devices.filter((d) => d.kind === 'audioinput'))
       setAudioOutputs(devices.filter((d) => d.kind === 'audiooutput'))
@@ -327,7 +336,7 @@ export default function SettingsView() {
                 Anzahl Leitungen
               </span>
               <span className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                Gleichzeitige Telefonleitungen (Neustart erforderlich)
+                Gleichzeitige Telefonleitungen
               </span>
             </div>
             <div className="flex items-center gap-1">
