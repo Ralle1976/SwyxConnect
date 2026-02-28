@@ -1,19 +1,20 @@
 import { useEffect, useRef } from 'react';
 import { useLineStore } from './useLineStore';
 import { useHistoryStore } from './useHistoryStore';
+import { useLocalContactStore } from './useLocalContactStore';
 import { LineInfo, LineState } from '../types/swyx';
 
 /** Trackt Leitungsänderungen und erstellt automatisch History-Einträge. */
 export function useCallHistoryTracker() {
-    const lines = useLineStore((s) => s.lines);
+    const lines: LineInfo[] = useLineStore((s: { lines: LineInfo[] }) => s.lines);
     const addEntry = useHistoryStore((s) => s.addEntry);
 
     const previousLines = useRef<LineInfo[]>([]);
     const callMetadata = useRef(new Map<number, { direction: 'inbound' | 'outbound', startTime: number, callerName: string, callerNumber: string }>());
 
     useEffect(() => {
-        lines.forEach((currentLine) => {
-            const prevLine = previousLines.current.find((l) => l.id === currentLine.id);
+        lines.forEach((currentLine: LineInfo) => {
+            const prevLine = previousLines.current.find((l: LineInfo) => l.id === currentLine.id);
             const metadata = callMetadata.current.get(currentLine.id);
             const prevState = prevLine?.state ?? LineState.Inactive;
 
@@ -51,13 +52,22 @@ export function useCallHistoryTracker() {
                 const wasAnswered = duration > 0 || prevState === LineState.Active;
                 const isMissed = metadata.direction === 'inbound' && !wasAnswered;
 
+                // Fallback auf dialedNumbers für ausgehende Anrufe
+                const dialedNumbers = useLineStore.getState().dialedNumbers;
+                const dialedNum = dialedNumbers[currentLine.id] || '';
                 const callerName = metadata.callerName || currentLine.callerName || prevLine?.callerName || '';
-                const callerNumber = metadata.callerNumber || currentLine.callerNumber || prevLine?.callerNumber || '';
+                const callerNumber = metadata.callerNumber || currentLine.callerNumber || prevLine?.callerNumber || dialedNum || '';
+
+                // Lokalen Kontakt nach Nummer suchen — lokaler Name hat Vorrang vor leerem callerName
+                const localContact = callerNumber
+                    ? useLocalContactStore.getState().findByNumber(callerNumber)
+                    : undefined;
+                const resolvedCallerName = callerName || localContact?.name || '';
 
                 // Immer einen Eintrag erstellen — auch wenn nur Richtung bekannt ist
                 addEntry({
                     id: crypto.randomUUID(),
-                    callerName: callerName || '',
+                    callerName: resolvedCallerName,
                     callerNumber: callerNumber || 'Unbekannt',
                     direction: isMissed ? 'missed' : metadata.direction,
                     timestamp: metadata.startTime,
@@ -72,17 +82,24 @@ export function useCallHistoryTracker() {
         });
 
         // Prüfe ob Leitungen aus previousLines verschwunden sind (Anruf beendet)
-        previousLines.current.forEach((prevLine) => {
-            const stillExists = lines.find((l) => l.id === prevLine.id);
+        previousLines.current.forEach((prevLine: LineInfo) => {
+            const stillExists = lines.find((l: LineInfo) => l.id === prevLine.id);
             if (!stillExists) {
                 const metadata = callMetadata.current.get(prevLine.id);
                 if (metadata && prevLine.state !== LineState.Inactive) {
+                    const dialedNumbers = useLineStore.getState().dialedNumbers;
+                    const dialedNum = dialedNumbers[prevLine.id] || '';
                     const callerName = metadata.callerName || prevLine.callerName || '';
-                    const callerNumber = metadata.callerNumber || prevLine.callerNumber || '';
-                    if (callerNumber || callerName) {
+                    const callerNumber = metadata.callerNumber || prevLine.callerNumber || dialedNum || '';
+                    // Lokalen Kontakt nach Nummer suchen
+                    const localContact = callerNumber
+                        ? useLocalContactStore.getState().findByNumber(callerNumber)
+                        : undefined;
+                    const resolvedCallerName = callerName || localContact?.name || '';
+                    if (callerNumber || resolvedCallerName) {
                         addEntry({
                             id: crypto.randomUUID(),
-                            callerName,
+                            callerName: resolvedCallerName,
                             callerNumber: callerNumber || 'Unbekannt',
                             direction: metadata.direction,
                             timestamp: metadata.startTime,

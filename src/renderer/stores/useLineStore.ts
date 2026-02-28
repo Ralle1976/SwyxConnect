@@ -5,17 +5,23 @@ interface LineStoreState {
   lines: LineInfo[];
   selectedLineId: number | null;
   activeCall: CallDetails | null;
+  /** Tracks the last dialed number per line so we can display it before COM reports back */
+  dialedNumbers: Record<number, string>;
   setLines: (lines: LineInfo[]) => void;
   updateLine: (lineId: number, updates: Partial<LineInfo>) => void;
   selectLine: (lineId: number | null) => void;
   setActiveCall: (call: CallDetails | null) => void;
   clearActiveCall: () => void;
+  setDialedNumber: (lineId: number, number: string) => void;
+  getDisplayNumber: (line: LineInfo) => string;
+  getDisplayName: (line: LineInfo) => string;
 }
 
 export const useLineStore = create<LineStoreState>((set) => ({
   lines: [],
   selectedLineId: null,
   activeCall: null,
+  dialedNumbers: {},
 
   setLines: (lines) => set(() => {
     // Auto-select erste aktive Leitung (state != Inactive), damit ActiveCallPanel erscheint
@@ -47,6 +53,23 @@ export const useLineStore = create<LineStoreState>((set) => ({
 
   setActiveCall: (call) => set({ activeCall: call }),
   clearActiveCall: () => set({ activeCall: null }),
+
+  setDialedNumber: (lineId, number) =>
+    set((state) => ({
+      dialedNumbers: { ...state.dialedNumbers, [lineId]: number },
+    })),
+
+  getDisplayNumber: (line) => {
+    const { dialedNumbers } = useLineStore.getState();
+    return line.callerNumber || dialedNumbers[line.id] || '';
+  },
+
+  getDisplayName: (line) => {
+    // Name from COM, or fallback to number, or 'Unbekannt'
+    if (line.callerName) return line.callerName;
+    const num = useLineStore.getState().getDisplayNumber(line);
+    return num || 'Unbekannt';
+  },
 }));
 
 export function hasActiveCall(lines: LineInfo[]): boolean {

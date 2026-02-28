@@ -16,8 +16,9 @@ import {
 import { useLineStore } from '../../stores/useLineStore'
 import { useHistoryStore } from '../../stores/useHistoryStore'
 import { usePresenceStore } from '../../stores/usePresenceStore'
+import { useContactStore } from '../../stores/useContactStore'
 import { useBridge } from '../../hooks/useBridge'
-import { LineState, PresenceStatus } from '../../types/swyx'
+import { LineState, PresenceStatus, LineInfo, CallHistoryEntry, ColleaguePresence, Contact } from '../../types/swyx'
 
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
@@ -124,10 +125,11 @@ function Section({
 
 export default function CallcenterDashboard() {
   const { isConnected } = useBridge()
-  const lines = useLineStore((s) => s.lines)
-  const entries = useHistoryStore((s) => s.entries)
-  const ownStatus = usePresenceStore((s) => s.ownStatus)
-  const colleagues = usePresenceStore((s) => s.colleagues)
+  const lines = useLineStore((s: { lines: LineInfo[] }) => s.lines)
+  const entries = useHistoryStore((s: { entries: CallHistoryEntry[] }) => s.entries)
+  const ownStatus = usePresenceStore((s: { ownStatus: PresenceStatus }) => s.ownStatus)
+  const colleagues = usePresenceStore((s: { colleagues: ColleaguePresence[] }) => s.colleagues)
+  const internalContacts = useContactStore((s: { contacts: Contact[] }) => s.contacts)
 
   // ─── Derived Stats ──────────────────────────────────────────────────────
 
@@ -150,7 +152,7 @@ export default function CallcenterDashboard() {
     const totalDuration = todayEntries.reduce((sum, e) => sum + e.duration, 0)
 
     const activeLines = lines.filter(
-      (l) =>
+      (l: LineInfo) =>
         l.state !== LineState.Inactive &&
         l.state !== LineState.Terminated &&
         l.state !== LineState.Disabled
@@ -265,7 +267,7 @@ export default function CallcenterDashboard() {
               </span>
             </div>
             <div className="flex flex-col gap-1.5 mt-1">
-              {lines.map((line) => (
+              {lines.map((line: LineInfo) => (
                 <div
                   key={line.id}
                   className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60"
@@ -298,7 +300,39 @@ export default function CallcenterDashboard() {
         {/* Kollegen */}
         <Section title="Team-Übersicht" icon={<Users size={16} />}>
           <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
-            {colleagues.length > 0 ? (
+            {internalContacts.length > 0 ? (
+              internalContacts.map((contact) => {
+                // Presence-Status aus presence store über Namensabgleich ermitteln
+                const colleague = colleagues.find(
+                  (c) => c.name === contact.name || c.userId === contact.id
+                )
+                const status = colleague?.status
+                return (
+                  <div
+                    key={contact.id}
+                    className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60"
+                  >
+                    <div
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${ status ? (PRESENCE_COLOR[status] ?? 'bg-zinc-400') : 'bg-zinc-300 dark:bg-zinc-600' }`}
+                    />
+                    <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate flex-1">
+                      {contact.name}
+                    </span>
+                    {contact.department && (
+                      <span className="text-zinc-400 dark:text-zinc-500 flex-shrink-0 text-[10px]">
+                        {contact.department}
+                      </span>
+                    )}
+                    {status && (
+                      <span className="text-zinc-400 dark:text-zinc-500 flex-shrink-0">
+                        {PRESENCE_LABEL[status] ?? status}
+                      </span>
+                    )}
+                  </div>
+                )
+              })
+            ) : colleagues.length > 0 ? (
+              // Fallback: wenn keine internen Kontakte geladen, Kollegen aus presence store zeigen
               colleagues.map((c) => (
                 <div
                   key={c.userId}

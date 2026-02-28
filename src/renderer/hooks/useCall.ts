@@ -15,10 +15,16 @@ export interface CallHookResult {
 }
 
 export function useCall(): CallHookResult {
-  const updateLine = useLineStore((s) => s.updateLine);
-  const setLines   = useLineStore((s) => s.setLines);
+  const updateLine      = useLineStore((s) => s.updateLine);
+  const setLines        = useLineStore((s) => s.setLines);
+  const setDialedNumber = useLineStore((s) => s.setDialedNumber);
 
   const dial = useCallback(async (number: string) => {
+    // Gewählte Nummer SOFORT speichern bevor COM antwortet
+    // Wir wissen noch nicht welche Leitung, daher auf selectedLine oder 0 setzen
+    const selectedId = useLineStore.getState().selectedLineId ?? 0;
+    setDialedNumber(selectedId, number);
+
     await window.swyxApi.dial(number);
     // Sofort nach dem Wählen den Leitungsstatus abfragen und UI aktualisieren
     try {
@@ -26,11 +32,20 @@ export function useCall(): CallHookResult {
       const lines = Array.isArray(result)
         ? result
         : (result as { lines: unknown[] } | null)?.lines ?? [];
-      if (lines.length > 0) setLines(lines as import('../types/swyx').LineInfo[]);
+      if (lines.length > 0) {
+        setLines(lines as import('../types/swyx').LineInfo[]);
+        // Finde die aktive Leitung und setze die gewählte Nummer darauf
+        const active = (lines as import('../types/swyx').LineInfo[]).find(
+          (l) => l.state !== 'Inactive' && l.state !== 'Terminated' && l.state !== 'Disabled'
+        );
+        if (active) {
+          setDialedNumber(active.id, number);
+        }
+      }
     } catch {
       // Fehler ignorieren — lineStateChanged-Event folgt ohnehin
     }
-  }, [setLines]);
+  }, [setLines, setDialedNumber]);
 
   const answer = useCallback(async (lineId: number) => {
     await window.swyxApi.answer(lineId);

@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import { useCall } from '../../hooks/useCall'
 import { useLineStore } from '../../stores/useLineStore'
+import { useLocalContactStore } from '../../stores/useLocalContactStore'
+import { LineInfo } from '../../types/swyx'
 import { Avatar } from '../common/Avatar'
 import { TransferDialog } from './TransferDialog'
 import { DtmfKeypad } from './DtmfKeypad'
@@ -53,15 +55,16 @@ function ActionButton({ onClick, active, danger, title, children }: ActionButton
 }
 
 export function ActiveCallPanel() {
-  const { selectedLineId, lines } = useLineStore()
-  const { hangup, hold, unhold, mute, unmute, transfer } = useCall()
+  const { selectedLineId, lines, getDisplayNumber } = useLineStore()
+  const findByNumber = useLocalContactStore((s) => s.findByNumber)
+  const { hangup, hold, unhold, mute, unmute } = useCall()
   const [elapsed, setElapsed] = useState(0)
   const [isMuted, setIsMuted] = useState(false)
   const [isOnHold, setIsOnHold] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
   const [showDtmf, setShowDtmf] = useState(false)
 
-  const activeLine = lines.find((l) => l.id === selectedLineId)
+  const activeLine = lines.find((l: LineInfo) => l.id === selectedLineId)
   const isRinging = activeLine?.state === 'Ringing'
   const isDialing = activeLine?.state === 'Dialing' || activeLine?.state === 'Alerting'
   const isVisible =
@@ -69,6 +72,12 @@ export function ActiveCallPanel() {
     activeLine.state !== 'Inactive' &&
     activeLine.state !== 'Terminated'
 
+  // Lokalen Kontakt nach Rufnummer suchen (COM-Name hat Vorrang wenn vorhanden)
+  const displayNumber = activeLine ? getDisplayNumber(activeLine) : ''
+  const comName = activeLine ? (activeLine.callerName ?? '') : ''
+  const localContact = displayNumber ? findByNumber(displayNumber) : undefined
+  // COM-Name hat Vorrang; lokaler Kontaktname als Fallback wenn COM leer
+  const resolvedDisplayName = comName || localContact?.name || displayNumber || 'Unbekannt'
   // Reset timer when active line changes
   useEffect(() => {
     setElapsed(0)
@@ -119,7 +128,7 @@ export function ActiveCallPanel() {
 
       {/* Caller avatar */}
       <div className="relative">
-        <Avatar name={activeLine.callerName ?? activeLine.callerNumber ?? '?'} size="lg" />
+        <Avatar name={resolvedDisplayName} size="lg" />
         {isRinging && (
           <span className="absolute -inset-2 rounded-full border-2 border-emerald-400 animate-ping opacity-75" />
         )}
@@ -128,11 +137,11 @@ export function ActiveCallPanel() {
       {/* Caller info */}
       <div className="text-center">
         <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
-          {activeLine.callerName ?? activeLine.callerNumber ?? 'Unbekannt'}
+          {resolvedDisplayName}
         </p>
-        {activeLine.callerName && activeLine.callerNumber && (
+        {displayNumber && resolvedDisplayName !== displayNumber && (
           <p className="text-sm font-mono text-zinc-500 dark:text-zinc-400 mt-0.5">
-            {activeLine.callerNumber}
+            {displayNumber}
           </p>
         )}
         <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 font-mono tabular-nums">

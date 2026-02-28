@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Clock } from 'lucide-react';
 import { useHistoryStore } from '../../stores/useHistoryStore';
+import { useLocalContactStore } from '../../stores/useLocalContactStore';
 import { useCall } from '../../hooks/useCall';
 import { CallHistoryEntry } from '../../types/swyx';
 import EmptyState from '../common/EmptyState';
 import HistoryEntry from './HistoryEntry';
-
+import AddContactDialog from '../contacts/AddContactDialog';
 type FilterTab = 'alle' | 'inbound' | 'outbound' | 'missed';
 
 const FILTER_TABS: { key: FilterTab; label: string }[] = [
@@ -17,15 +18,24 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 
 export default function HistoryView(): React.JSX.Element {
   const { entries, loading, fetchHistory } = useHistoryStore();
+  const findByNumber = useLocalContactStore((s) => s.findByNumber);
   const { dial } = useCall();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('alle');
-
+  const [addContactNumber, setAddContactNumber] = useState<string | null>(null);
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
 
   function handleDial(number: string): void {
     dial(number);
+  }
+
+  function handleAddContact(number: string): void {
+    setAddContactNumber(number);
+  }
+
+  function handleCloseAddContact(): void {
+    setAddContactNumber(null);
   }
 
   const filtered: CallHistoryEntry[] = entries.filter((e) => {
@@ -37,7 +47,8 @@ export default function HistoryView(): React.JSX.Element {
   });
 
   return (
-    <div className="flex flex-col h-full w-full bg-white dark:bg-zinc-900 overflow-hidden">
+    <>
+      <div className="flex flex-col h-full w-full bg-white dark:bg-zinc-900 overflow-hidden">
       {/* Header */}
       <div className="flex-none px-6 pt-5 pb-3 border-b border-zinc-200 dark:border-zinc-800">
         <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight">
@@ -113,12 +124,26 @@ export default function HistoryView(): React.JSX.Element {
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {filtered.map((entry) => (
               <li key={entry.id}>
-                <HistoryEntry entry={entry} onDial={handleDial} />
+                <HistoryEntry
+                  entry={entry}
+                  onDial={handleDial}
+                  onAddContact={handleAddContact}
+                  resolvedName={findByNumber(entry.callerNumber)?.name}
+                />
               </li>
             ))}
           </ul>
         )}
       </div>
-    </div>
+      </div>
+
+      {/* Kontakt erstellen Dialog */}
+      {addContactNumber !== null && (
+        <AddContactDialog
+          initialNumber={addContactNumber}
+          onClose={handleCloseAddContact}
+        />
+      )}
+  </>
   );
 }

@@ -1,5 +1,6 @@
 import { Tray, Menu, BrowserWindow, nativeImage, app } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { PresenceStatus } from '../shared/types';
 
 const PRESENCE_LABELS: Record<PresenceStatus, string> = {
@@ -23,10 +24,20 @@ export class TrayIcon {
   init(): void {
     try {
       const iconPath = this.getIconPath();
-      this.tray = new Tray(iconPath);
-    } catch {
-      // Fallback: empty 1x1 image so the rest of the app still boots
-      this.tray = new Tray(nativeImage.createEmpty());
+      if (fs.existsSync(iconPath)) {
+        this.tray = new Tray(iconPath);
+      } else {
+        console.warn(`[Tray] Icon nicht gefunden: ${iconPath}, nutze Fallback.`);
+        this.tray = new Tray(this.createFallbackIcon());
+      }
+    } catch (err) {
+      console.error('[Tray] Fehler beim Erstellen:', err);
+      try {
+        this.tray = new Tray(this.createFallbackIcon());
+      } catch {
+        console.error('[Tray] Auch Fallback-Icon fehlgeschlagen. Kein Tray-Icon.');
+        return;
+      }
     }
     this.tray.setToolTip('Swyx Softphone');
     this.updateContextMenu();
@@ -123,5 +134,18 @@ export class TrayIcon {
       : path.join(app.getAppPath(), 'resources');
 
     return path.join(resourcesPath, 'icons', iconName);
+  }
+
+  private createFallbackIcon(): Electron.NativeImage {
+    // 16x16 green square as minimal fallback
+    const size = 16;
+    const buf = Buffer.alloc(size * size * 4);
+    for (let i = 0; i < size * size; i++) {
+      buf[i * 4] = 34;      // R
+      buf[i * 4 + 1] = 197; // G (#22c55e)
+      buf[i * 4 + 2] = 94;  // B
+      buf[i * 4 + 3] = 255; // A
+    }
+    return nativeImage.createFromBuffer(buf, { width: size, height: size });
   }
 }

@@ -4,12 +4,17 @@ import {
   ArrowUpRight,
   PhoneMissed,
   Phone,
+  UserPlus,
 } from 'lucide-react';
 import { CallHistoryEntry } from '../../types/swyx';
 
 interface HistoryEntryProps {
   entry: CallHistoryEntry;
   onDial: (number: string) => void;
+  /** Wird aufgerufen wenn "Kontakt erstellen" geklickt wird */
+  onAddContact?: (number: string) => void;
+  /** Aufgelöster Name aus lokalem Telefonbuch (überschreibt Anzeige) */
+  resolvedName?: string;
 }
 
 /** Format seconds → mm:ss */
@@ -66,6 +71,8 @@ const DIRECTION_META: Record<
 export default function HistoryEntry({
   entry,
   onDial,
+  onAddContact,
+  resolvedName,
 }: HistoryEntryProps): React.JSX.Element {
   const [hovered, setHovered] = useState(false);
   const meta = DIRECTION_META[entry.direction];
@@ -74,6 +81,11 @@ export default function HistoryEntry({
   function handleRedial(e: React.MouseEvent<HTMLButtonElement>): void {
     e.stopPropagation();
     onDial(entry.callerNumber);
+  }
+
+  function handleAddContact(e: React.MouseEvent<HTMLButtonElement>): void {
+    e.stopPropagation();
+    onAddContact?.(entry.callerNumber);
   }
 
   return (
@@ -102,10 +114,10 @@ export default function HistoryEntry({
                 : 'text-zinc-900 dark:text-zinc-100'
             }`}
           >
-            {entry.callerName || entry.callerNumber}
+            {resolvedName ?? entry.callerName ?? entry.callerNumber}
           </span>
         </div>
-        {entry.callerName && (
+        {(resolvedName ?? entry.callerName) && (
           <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 font-mono truncate">
             {entry.callerNumber}
           </div>
@@ -120,12 +132,22 @@ export default function HistoryEntry({
         )}
       </div>
 
-      {/* Redial button */}
+      {/* Aktionen: Kontakt erstellen + Rückruf */}
       <div
-        className={`flex-none ml-1 transition-opacity duration-100 ${
+        className={`flex items-center gap-1 flex-none ml-1 transition-opacity duration-100 ${
           hovered ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
+        {onAddContact && !resolvedName && !entry.callerName && (
+          <button
+            type="button"
+            onClick={handleAddContact}
+            title="Kontakt erstellen"
+            className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 text-white shadow-sm transition-colors"
+          >
+            <UserPlus className="w-4 h-4" />
+          </button>
+        )}
         <button
           type="button"
           onClick={handleRedial}
