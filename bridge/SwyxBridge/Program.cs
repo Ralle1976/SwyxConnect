@@ -4,11 +4,12 @@ using SwyxBridge.Com;
 using SwyxBridge.Handlers;
 using SwyxBridge.JsonRpc;
 using SwyxBridge.Utils;
+using SwyxBridge.Standalone;
 
 namespace SwyxBridge;
 
 /// <summary>
-/// SwyxBridge — JSON-RPC ↔ COM Bridge für den Electron Softphone Client.
+/// SwyxBridge — JSON-RPC ↔ COM/SIP Bridge für den Electron Softphone Client.
 /// 
 /// Architektur:
 ///   [Background-Thread] → liest stdin → postet auf STA via SynchronizationContext.Post()
@@ -29,6 +30,7 @@ static class Program
     private static VoicemailHandler? _voicemailHandler;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
+    private static StandaloneKestrelHost? _kestrelHost;
 
     [STAThread]
     static void Main(string[] args)
@@ -38,22 +40,15 @@ static class Program
 
         Logging.Info("SwyxBridge startet...");
 
-        // WinForms SynchronizationContext einrichten
-        // (wird automatisch installiert durch [STAThread] + WindowsFormsSynchronizationContext)
         WindowsFormsSynchronizationContext.AutoInstall = true;
         var appCtx = new ApplicationContext();
-
-        // STA-Dispatcher erstellen (fängt den SynchronizationContext ein)
         StaDispatcher? sta = null;
 
-        // Wir müssen den Dispatcher NACH dem Start der Message Pump erstellen,
-        // dazu nutzen wir einen Timer-Trick:
         var initTimer = new System.Windows.Forms.Timer { Interval = 1 };
         initTimer.Tick += (s, e) =>
         {
             initTimer.Stop();
             initTimer.Dispose();
-
             try
             {
                 sta = new StaDispatcher();
@@ -67,7 +62,7 @@ static class Program
         };
         initTimer.Start();
 
-        // Heartbeat Timer (System.Timers.Timer, feuert auf ThreadPool)
+        // Heartbeat
         int uptimeSeconds = 0;
         _heartbeat = new System.Timers.Timer(5000);
         _heartbeat.Elapsed += (s, e) =>
@@ -86,85 +81,48 @@ static class Program
         _rpcServer?.Stop();
         EventSink.Unsubscribe();
         _connector?.Dispose();
+        _kestrelHost?.Dispose();
     }
 
     private static void InitializeBridge(StaDispatcher sta)
     {
-        // COM-Verbindung herstellen (auf STA-Thread)
+        // Manual Connect Mode — COM wird NICHT automatisch gestartet
         _connector = new SwyxConnector();
-
-        try
-        {
-            _connector.Connect();  // uses auto-detection (null = try PubGetServerFromAutoDetection first)
-            Logging.Info("COM-Verbindung hergestellt.");
-
-            // Handler erstellen (LineManager muss vor EventSink bereit sein)
-            _lineManager = new LineManager(_connector);
-
-            // Event-Sink registrieren
-            EventSink.Subscribe(_connector, _lineManager);
-            Logging.Info("Event-Sink registriert.");
-        }
-        catch (Exception ex)
-        {
-            Logging.Error($"COM-Verbindung fehlgeschlagen: {ex.Message}");
-            JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected", error = ex.Message });
-        }
-
-        // Restliche Handler erstellen (LineManager ggf. bereits gesetzt)
-        _lineManager ??= new LineManager(_connector);
+        _lineManager = new LineManager(_connector);
         _callHandler = new CallHandler(_lineManager);
         _presenceHandler = new PresenceHandler(_connector);
         _contactHandler = new ContactHandler(_connector);
         _historyHandler = new HistoryHandler(_connector);
         _voicemailHandler = new VoicemailHandler(_connector);
 
-        // JSON-RPC Server auf Background-Thread starten
         _rpcServer = new JsonRpcServer(sta, DispatchRequest);
-        var serverThread = new Thread(_rpcServer.Run)
-        {
-            IsBackground = true,
-            Name = "JsonRpcServer"
-        };
+        var serverThread = new Thread(_rpcServer.Run) { IsBackground = true, Name = "JsonRpcServer" };
         serverThread.Start();
 
-        // Connected-Status melden
-        JsonRpcEmitter.EmitEvent("bridgeState", new
-        {
-            state = _connector.IsConnected ? "connected" : "disconnected"
-        });
-
-        Logging.Info("SwyxBridge bereit (Standalone SDK Modus, kein SwyxIt!-Fenster-Management).");
+        // Status: disconnected bis "connect" explizit aufgerufen wird
+        JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected" });
+        Logging.Info("SwyxBridge bereit (manual connect mode + standalone probes).");
     }
 
-    /// <summary>
-    /// Zentrale Request-Dispatch — wird auf dem STA-Thread aufgerufen.
-    /// </summary>
     private static void DispatchRequest(JsonRpcRequest req)
     {
-        // Connection management (handled directly in Program.cs)
+        // --- Connection Management ---
         if (req.Method == "connect")
         {
             try
             {
                 string? server = null;
                 if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
-                {
                     if (req.Params.Value.TryGetProperty("serverName", out var sv))
                         server = sv.GetString();
-                }
                 _connector?.Connect(server);
-                // Re-subscribe events after reconnect
                 if (_connector?.IsConnected == true && _lineManager != null)
                     EventSink.Subscribe(_connector, _lineManager);
                 var info = _connector?.GetConnectionInfo() ?? new { connected = false };
                 if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, info);
                 JsonRpcEmitter.EmitEvent("bridgeState", new { state = _connector?.IsConnected == true ? "connected" : "disconnected" });
             }
-            catch (Exception ex)
-            {
-                if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.ComError, ex.Message);
-            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.ComError, ex.Message); }
             return;
         }
         if (req.Method == "getConnectionInfo")
@@ -182,34 +140,129 @@ static class Program
             return;
         }
 
-        if (_callHandler?.CanHandle(req.Method) == true)
+        // --- Standalone Kestrel Host ---
+        if (req.Method == "startStandaloneHost")
         {
-            _callHandler.Handle(req);
+            try
+            {
+                string? serverAddress = null, username = null, password = null;
+                string? publicServer = null, publicAuthServer = null;
+                int kestrelPort = 0, numberOfLines = 2, publicSipPort = 15021, publicAuthPort = 8021;
+
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var p = req.Params.Value;
+                    if (p.TryGetProperty("serverAddress", out var sa)) serverAddress = sa.GetString();
+                    if (p.TryGetProperty("username", out var un)) username = un.GetString();
+                    if (p.TryGetProperty("password", out var pw)) password = pw.GetString();
+                    if (p.TryGetProperty("port", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) kestrelPort = pt.GetInt32();
+                    if (p.TryGetProperty("numberOfLines", out var nl) && nl.ValueKind == System.Text.Json.JsonValueKind.Number) numberOfLines = Math.Clamp(nl.GetInt32(), 1, 8);
+                    if (p.TryGetProperty("publicServer", out var ps)) publicServer = ps.GetString();
+                    if (p.TryGetProperty("publicSipPort", out var psp) && psp.ValueKind == System.Text.Json.JsonValueKind.Number) publicSipPort = psp.GetInt32();
+                    if (p.TryGetProperty("publicAuthServer", out var pas)) publicAuthServer = pas.GetString();
+                    if (p.TryGetProperty("publicAuthPort", out var pap) && pap.ValueKind == System.Text.Json.JsonValueKind.Number) publicAuthPort = pap.GetInt32();
+                }
+
+                if (_kestrelHost?.IsRunning == true)
+                {
+                    if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new { ok = true, port = _kestrelHost.ActualPort, message = "Bereits gestartet" });
+                    return;
+                }
+
+                var config = new SipClientConfig
+                {
+                    ServerAddress = serverAddress ?? "",
+                    Username = username ?? "",
+                    Password = password ?? "",
+                    SipDomain = serverAddress ?? "",
+                    KestrelPort = kestrelPort,
+                    NumberOfLines = numberOfLines,
+                    PublicServer = publicServer ?? "",
+                    PublicSipPort = publicSipPort,
+                    PublicAuthServer = publicAuthServer ?? "",
+                    PublicAuthPort = publicAuthPort
+                };
+                _kestrelHost = new StandaloneKestrelHost(config);
+
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        int port = await _kestrelHost.StartAsync();
+                        if (req.Id.HasValue)
+                            JsonRpcEmitter.EmitResponse(req.Id.Value, new { ok = true, port, hubPaths = new[] { "/hubs/swyxit", "/hubs/comsocket" }, healthUrl = $"http://localhost:{port}/api/health" });
+                        JsonRpcEmitter.EmitEvent("standaloneHostStarted", new { port });
+                    }
+                    catch (Exception ex)
+                    {
+                        Logging.Error($"Kestrel Start: {ex.Message}");
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message);
+                    }
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
         }
-        else if (_presenceHandler?.CanHandle(req.Method) == true)
+        if (req.Method == "stopStandaloneHost")
         {
-            _presenceHandler.Handle(req);
+            Task.Run(async () =>
+            {
+                try
+                {
+                    if (_kestrelHost != null) { await _kestrelHost.StopAsync(); _kestrelHost.Dispose(); _kestrelHost = null; }
+                    if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new { ok = true });
+                    JsonRpcEmitter.EmitEvent("standaloneHostStopped", new { });
+                }
+                catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            });
+            return;
         }
-        else if (_contactHandler?.CanHandle(req.Method) == true)
+        if (req.Method == "getStandaloneHostStatus")
         {
-            _contactHandler.Handle(req);
+            if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new { running = _kestrelHost?.IsRunning ?? false, port = _kestrelHost?.ActualPort ?? 0 });
+            return;
         }
-        else if (_historyHandler?.CanHandle(req.Method) == true)
+
+        // --- Network Probe (NEU) ---
+        if (req.Method == "probeNetwork")
         {
-            _historyHandler.Handle(req);
+            try
+            {
+                string? publicServer = null;
+                int publicSipPort = 15021, publicAuthPort = 8021;
+
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var p = req.Params.Value;
+                    if (p.TryGetProperty("publicServer", out var ps)) publicServer = ps.GetString();
+                    if (p.TryGetProperty("publicSipPort", out var psp) && psp.ValueKind == System.Text.Json.JsonValueKind.Number) publicSipPort = psp.GetInt32();
+                    if (p.TryGetProperty("publicAuthPort", out var pap) && pap.ValueKind == System.Text.Json.JsonValueKind.Number) publicAuthPort = pap.GetInt32();
+                }
+
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        var result = await NetworkProbe.ProbeAllAsync(publicServer, publicSipPort, publicAuthPort);
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, result);
+                    }
+                    catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
         }
-        else if (_voicemailHandler?.CanHandle(req.Method) == true)
-        {
-            _voicemailHandler.Handle(req);
-        }
+
+        // --- Handler Dispatch ---
+        if (_callHandler?.CanHandle(req.Method) == true) { _callHandler.Handle(req); }
+        else if (_presenceHandler?.CanHandle(req.Method) == true) { _presenceHandler.Handle(req); }
+        else if (_contactHandler?.CanHandle(req.Method) == true) { _contactHandler.Handle(req); }
+        else if (_historyHandler?.CanHandle(req.Method) == true) { _historyHandler.Handle(req); }
+        else if (_voicemailHandler?.CanHandle(req.Method) == true) { _voicemailHandler.Handle(req); }
         else
         {
             Logging.Warn($"Unbekannte Methode: {req.Method}");
-            if (req.Id.HasValue)
-            {
-                JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.MethodNotFound,
-                    $"Methode '{req.Method}' nicht gefunden.");
-            }
+            if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.MethodNotFound, $"Methode '{req.Method}' nicht gefunden.");
         }
-}
+    }
 }

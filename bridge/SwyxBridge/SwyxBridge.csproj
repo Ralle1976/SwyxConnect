@@ -7,14 +7,21 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <PlatformTarget>x64</PlatformTarget>
-    <Platform>x64</Platform>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platform>x86</Platform>
     <RootNamespace>SwyxBridge</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Swyx.Client.ClmgrAPI" Version="14.21.0" />
+    <PackageReference Include="SIPSorcery" Version="10.0.3" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.*" />
     <PackageReference Include="System.Text.Json" Version="8.*" />
+  </ItemGroup>
+
+  <!-- ASP.NET Core + SignalR für Standalone-Kestrel-Host -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
 </Project>
