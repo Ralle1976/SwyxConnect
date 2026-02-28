@@ -296,7 +296,7 @@ static class Program
         {
             try
             {
-                string host = "127.0.0.1", username = "Ralf Arnold";
+                string host = "127.0.0.1", username = "probe-user";
                 int port = 5060;
 
                 if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)

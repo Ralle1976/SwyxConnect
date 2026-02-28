@@ -58,7 +58,7 @@ public sealed class LineManager
         }
     }
 
-    private ClientLineMgrClass GetCom() =>
+    private dynamic GetCom() =>
         _connector.GetCom() ?? throw new InvalidOperationException("COM nicht verbunden.");
 
     /// <summary>

@@ -58,9 +58,41 @@ public sealed class ContactHandler
 
         try
         {
-            // FulltextSearchInContactsEx ist die korrekte typisierte Methode.
-            // Parameter: searchText, bSearchInPhonebook, bSearchInPlugins, bSearchInNumbers, out resultCollection
-            int hr = com.FulltextSearchInContactsEx(query, 1, 1, 1, out object resultCollection);
+            // FulltextSearchInContactsEx has an 'out' parameter which doesn't work with dynamic dispatch.
+            // Use Reflection/InvokeMember to call it properly on the __ComObject.
+            var comObj = (object)com;
+            object resultCollection;
+            
+            // Try 1: InvokeMember with short params (COM VARIANT_BOOL = short, -1=true, 0=false)
+            try
+            {
+                var args = new object[] { query, (short)-1, (short)-1, (short)-1, null! };
+                var paramMods = new System.Reflection.ParameterModifier[] { new(5) };
+                paramMods[0][4] = true; // out param at index 4
+                comObj.GetType().InvokeMember("FulltextSearchInContactsEx",
+                    System.Reflection.BindingFlags.InvokeMethod, null, comObj, args, paramMods, null, null);
+                resultCollection = args[4];
+            }
+            catch (Exception ex1)
+            {
+                Logging.Warn($"ContactHandler: InvokeMember(short) fehlgeschlagen: {ex1.InnerException?.Message ?? ex1.Message}");
+                // Try 2: InvokeMember with int params (some COM servers accept int for VARIANT_BOOL)
+                try
+                {
+                    var args2 = new object[] { query, 1, 1, 1, null! };
+                    var paramMods2 = new System.Reflection.ParameterModifier[] { new(5) };
+                    paramMods2[0][4] = true;
+                    comObj.GetType().InvokeMember("FulltextSearchInContactsEx",
+                        System.Reflection.BindingFlags.InvokeMethod, null, comObj, args2, paramMods2, null, null);
+                    resultCollection = args2[4];
+                }
+                catch (Exception ex2)
+                {
+                    Logging.Warn($"ContactHandler: InvokeMember(int) fehlgeschlagen: {ex2.InnerException?.Message ?? ex2.Message}");
+                    // Try 3: Try using SpeedDial phonebook as fallback
+                    return GetContactsViaSpeedDials(com);
+                }
+            }
             if (resultCollection == null) return Array.Empty<object>();
 
             // Das Ergebnis ist eine COM-Collection — dynamic für den Zugriff auf Items,
@@ -109,4 +141,48 @@ public sealed class ContactHandler
     }
 
     private static string SafeString(Func<string> f) { try { return f(); } catch { return ""; } }
+
+    /// <summary>
+    /// Fallback: Liest interne Kontakte über SpeedDials (immer verfügbar).
+    /// DispSpeedDialName/Number/State liefern Kurzwahlen die typischerweise
+    /// die internen Benutzer abbilden.
+    /// </summary>
+    private object[] GetContactsViaSpeedDials(dynamic com)
+    {
+        var contacts = new List<object>();
+        try
+        {
+            int numSpeedDials = (int)com.DispNumberOfSpeedDials;
+            Logging.Info($"ContactHandler: Fallback via SpeedDials ({numSpeedDials} Einträge).");
+
+            for (int i = 0; i < numSpeedDials && i < 500; i++)
+            {
+                try
+                {
+                    string name   = (string)(((dynamic)com).DispSpeedDialName(i) ?? "");
+                    string number = (string)(((dynamic)com).DispSpeedDialNumber(i) ?? "");
+
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        contacts.Add(new
+                        {
+                            id         = $"sd_{i}",
+                            name,
+                            number,
+                            email      = "",
+                            department = ""
+                        });
+                    }
+                }
+                catch { /* SpeedDial-Index nicht verfügbar */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"ContactHandler: SpeedDial-Fallback: {ex.Message}");
+        }
+
+        Logging.Info($"ContactHandler: {contacts.Count} Kontakte via SpeedDials.");
+        return contacts.ToArray();
+    }
 }

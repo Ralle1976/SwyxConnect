@@ -8,7 +8,7 @@ namespace SwyxBridge.Standalone;
 
 /// <summary>
 /// Netzwerk-Probes für SwyxWare Server-Erkennung.
-/// Testet CDS (localhost:9094), SIP (localhost:5060), RemoteConnector-Tunnel (RC0321:15021).
+/// Testet CDS (localhost:9094), SIP (localhost:5060), RemoteConnector-Tunnel (publicServer:15021).
 /// Läuft als Windows x86 EXE und kann localhost-only Ports von CLMgr erreichen.
 /// </summary>
 public static class NetworkProbe
@@ -27,7 +27,7 @@ public static class NetworkProbe
         var localSipUdp = await ProbeUdpSipAsync("127.0.0.1", 5060);
         results["localSip5060"] = localSipUdp;
 
-        var localSipRegister = await ProbeSipRegisterAsync("127.0.0.1", 5060, "Ralf Arnold");
+        var localSipRegister = await ProbeSipRegisterAsync("127.0.0.1", 5060, "probe-user");
         results["localSipRegister5060"] = localSipRegister;
 
         var localPort9100 = await ProbeTcpPortAsync("127.0.0.1", 9100, "CLMgr-9100");
@@ -625,7 +625,7 @@ public static class NetworkProbe
 
     /// <summary>
     /// SIP REGISTER with CDS authentication: tries multiple username formats
-    /// (LoginID GUID, "Ralf Arnold", "Ralf.Arnold") with PSK as password.
+    /// (LoginID GUID, display name variants) with PSK as password.
     /// If server returns 401 Digest challenge, computes MD5 Digest auth response.
     /// </summary>
     public static async Task<object> ProbeSipRegisterWithAuthAsync(string host, int port, string loginId, string psk, string displayName)

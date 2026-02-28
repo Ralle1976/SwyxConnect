@@ -41,10 +41,22 @@ public sealed class EventSink
         if (com == null)
             throw new InvalidOperationException("COM nicht verbunden.");
 
+        // Cast __ComObject to typed events interface for event subscription
+        // __ComObject supports QueryInterface for interfaces (not coclasses)
+        ClientLineMgrClass? typed = com as ClientLineMgrClass;
+
         try
         {
-            com.PubOnLineMgrNotification += _staticDelegate;
-            Logging.Info("EventSink: Registriert für PubOnLineMgrNotification (typisiert).");
+            if (typed != null)
+            {
+                typed.PubOnLineMgrNotification += _staticDelegate;
+            }
+            else
+            {
+                // Fallback: use dynamic event subscription
+                ((dynamic)com).PubOnLineMgrNotification += _staticDelegate;
+            }
+            Logging.Info("EventSink: Registriert für PubOnLineMgrNotification.");
         }
         catch (Exception ex)
         {
@@ -65,7 +77,13 @@ public sealed class EventSink
         {
             var com = _staticInstance._connector.GetCom();
             if (com != null)
-                com.PubOnLineMgrNotification -= _staticDelegate;
+            {
+                ClientLineMgrClass? typed = com as ClientLineMgrClass;
+                if (typed != null)
+                    typed.PubOnLineMgrNotification -= _staticDelegate;
+                else
+                    ((dynamic)com).PubOnLineMgrNotification -= _staticDelegate;
+            }
             Logging.Info("EventSink: Abgemeldet.");
         }
         catch (Exception ex)

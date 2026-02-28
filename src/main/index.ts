@@ -7,6 +7,7 @@ import { registerIpcHandlers } from './ipc/handlers'
 import { SettingsStore } from './services/SettingsStore'
 import { NotificationService } from './services/NotificationService'
 import { BridgeState, CallDetails, LineState } from '../shared/types'
+import { IPC_CHANNELS } from '../shared/constants'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -202,6 +203,21 @@ app.whenReady().then(() => {
 
   bridgeManager.on('stateChanged', (state: BridgeState) => {
     trayIcon?.setStatus(state)
+
+    // Auto-connect COM when bridge process is ready
+    if (state === BridgeState.Connected) {
+      console.log('[Main] Bridge-Prozess bereit, sende connect...')
+      bridgeManager
+        .sendRequest('connect')
+        .then((info) => {
+          console.log('[Main] COM verbunden:', JSON.stringify(info))
+          // Notify renderer that COM is connected
+          mainWindow?.webContents.send(IPC_CHANNELS.BRIDGE_STATE_CHANGED, BridgeState.Connected)
+        })
+        .catch((err: Error) => {
+          console.error('[Main] COM connect fehlgeschlagen:', err.message)
+        })
+    }
   })
 
   bridgeManager.on('event', (evt) => {

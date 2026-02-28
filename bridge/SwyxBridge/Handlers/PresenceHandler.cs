@@ -499,7 +499,7 @@ public sealed class PresenceHandler
     /// Fallback: Liest Kollegeninfo über SpeedDials (immer verfügbar).
     /// DispSpeedDialName/Number/State sind nicht im typed interface — dynamic cast.
     /// </summary>
-    private object GetPresenceViaSpeedDials(ClientLineMgrClass com)
+    private object GetPresenceViaSpeedDials(dynamic com)
     {
         var colleagues = new List<object>();
 

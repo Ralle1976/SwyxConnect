@@ -16,7 +16,7 @@ public sealed class SwyxConnector : IDisposable
     // CRITICAL: Static reference prevents GC collection while COM holds reference
     private static SwyxConnector? _instance;
 
-    private ClientLineMgrClass? _clmgr;
+    private dynamic? _clmgr;
     private bool _disposed;
 
     public bool IsConnected => _clmgr != null;
@@ -34,26 +34,17 @@ public sealed class SwyxConnector : IDisposable
     {
         if (_clmgr != null) { Logging.Warn("Already connected"); return; }
 
-        Logging.Info("SwyxConnector: Creating COM object via ProgID (hybrid SDK mode)...");
+        Logging.Info("SwyxConnector: Creating COM object via ProgID...");
 
         try
         {
-            // Hybrid approach: Use ProgID activation (proven to work, non-blocking)
-            // then cast to typed SDK class for subsequent typed API calls.
-            // Direct 'new ClientLineMgrClass()' hangs indefinitely on STA thread.
+            // ProgID activation → returns __ComObject.
+            // __ComObject can only be cast to COM interfaces, not to coclass types
+            // like ClientLineMgrClass. We store as dynamic for late-bound dispatch.
             var type = Type.GetTypeFromProgID("CLMgr.ClientLineMgr", throwOnError: true);
             var comObj = Activator.CreateInstance(type!);
-            if (comObj is ClientLineMgrClass typed)
-            {
-                _clmgr = typed;
-                Logging.Info("SwyxConnector: COM object created (typed cast OK).");
-            }
-            else
-            {
-                // Fallback: force-cast via Marshal — the object IS a ClientLineMgr
-                _clmgr = (ClientLineMgrClass)comObj!;
-                Logging.Info("SwyxConnector: COM object created (direct cast).");
-            }
+            _clmgr = comObj ?? throw new InvalidOperationException("COM object creation returned null");
+            Logging.Info("SwyxConnector: COM object created via ProgID (dynamic dispatch).");
         }
         catch (COMException ex) when (ex.HResult == E_ACCESSDENIED)
         {
@@ -107,10 +98,10 @@ public sealed class SwyxConnector : IDisposable
         // Step 3: Check connection state
         try
         {
-            bool isLoggedIn = _clmgr.DispIsLoggedIn != 0;
-            bool isServerUp = _clmgr.DispIsServerUp != 0;
-            string currentServer = _clmgr.DispGetCurrentServer ?? "";
-            string currentUser = _clmgr.DispGetCurrentUser ?? "";
+            bool isLoggedIn = (int)_clmgr.DispIsLoggedIn != 0;
+            bool isServerUp = (int)_clmgr.DispIsServerUp != 0;
+            string currentServer = (string)(_clmgr.DispGetCurrentServer ?? "");
+            string currentUser = (string)(_clmgr.DispGetCurrentUser ?? "");
             Logging.Info($"SwyxConnector: LoggedIn={isLoggedIn}, ServerUp={isServerUp}, Server={currentServer}, User={currentUser}");
         }
         catch (Exception ex) { Logging.Warn($"SwyxConnector: Status check failed: {ex.Message}"); }
@@ -119,7 +110,7 @@ public sealed class SwyxConnector : IDisposable
     /// <summary>
     /// Gibt das typisierte COM-Objekt zurück für direkte Aufrufe.
     /// </summary>
-    public ClientLineMgrClass? GetCom() => _clmgr;
+    public dynamic? GetCom() => _clmgr;
 
     /// <summary>
     /// Gibt Verbindungsinformationen zurück.
@@ -133,10 +124,10 @@ public sealed class SwyxConnector : IDisposable
             return new
             {
                 connected = true,
-                server = _clmgr.DispGetCurrentServer ?? "",
-                user = _clmgr.DispGetCurrentUser ?? "",
-                loggedIn = _clmgr.DispIsLoggedIn != 0,
-                serverUp = _clmgr.DispIsServerUp != 0
+                server = (string)(_clmgr.DispGetCurrentServer ?? ""),
+                user = (string)(_clmgr.DispGetCurrentUser ?? ""),
+                loggedIn = (int)_clmgr.DispIsLoggedIn != 0,
+                serverUp = (int)_clmgr.DispIsServerUp != 0
             };
         }
         catch (Exception ex)
@@ -160,7 +151,7 @@ public sealed class SwyxConnector : IDisposable
         catch (Exception ex) { Logging.Warn($"UnInit failed: {ex.Message}"); }
         try
         {
-            Marshal.FinalReleaseComObject(_clmgr);
+            Marshal.FinalReleaseComObject((object)_clmgr);
             Logging.Info("SwyxConnector: COM released.");
         }
         catch (Exception ex) { Logging.Warn($"COM release failed: {ex.Message}"); }

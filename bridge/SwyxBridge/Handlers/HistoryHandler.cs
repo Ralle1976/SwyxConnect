@@ -73,7 +73,7 @@ public sealed class HistoryHandler
     /// <summary>
     /// Liest die Anrufliste über typisierte CallerCollectionClass / CallerItemClass.
     /// </summary>
-    private object[] GetHistoryViaCallerEnumerator(ClientLineMgrClass com)
+    private object[] GetHistoryViaCallerEnumerator(dynamic com)
     {
         // DispClientConfig returns object — cast to ClientConfigClass for typed CallerEnumerator access
         var cfgObj = com.DispClientConfig;
@@ -86,12 +86,11 @@ public sealed class HistoryHandler
         // CallerEnumerator property is on ClientConfigClass — use dynamic to access it
         // since IClientConfig interface may not expose CallerEnumerator directly
         dynamic cfg = cfgObj;
-        CallerCollectionClass? callerColl = null;
+        dynamic? callerColl = null;
 
         try
         {
-            var enumObj = cfg.CallerEnumerator;
-            callerColl = enumObj as CallerCollectionClass;
+            callerColl = cfg.CallerEnumerator;
         }
         catch (Exception ex)
         {
@@ -101,12 +100,12 @@ public sealed class HistoryHandler
 
         if (callerColl == null)
         {
-            Logging.Warn("HistoryHandler: CallerEnumerator ist null oder falscher Typ.");
+            Logging.Warn("HistoryHandler: CallerEnumerator ist null.");
             return Array.Empty<object>();
         }
 
         int count = 0;
-        try { count = callerColl.Count; }
+        try { count = (int)callerColl.Count; }
         catch (Exception ex)
         {
             Logging.Warn($"HistoryHandler: CallerCollection.Count fehlgeschlagen: {ex.Message}");
@@ -119,21 +118,21 @@ public sealed class HistoryHandler
             return Array.Empty<object>();
         }
 
-        Logging.Info($"HistoryHandler: CallerEnumerator hat {count} Einträge.");
+        Logging.Info($"HistoryHandler: CallerEnumerator hat {count} Eintr\u00e4ge.");
 
         var entries = new List<object>();
-        int maxEntries = Math.Min(count, 100); // Max 100 Einträge
+        int maxEntries = Math.Min(count, 100); // Max 100 Eintr\u00e4ge
 
         for (int i = 0; i < maxEntries; i++)
         {
             try
             {
                 // Item() takes object index (COM convention)
-                var itemObj = callerColl.Item((object)i);
-                if (itemObj is not CallerItemClass item) continue;
+                dynamic item = callerColl.Item((object)i);
+                if (item == null) continue;
 
-                string callerName   = item.Name ?? "";
-                string callerNumber = item.Number ?? "";
+                string callerName   = (string)(item.Name ?? "");
+                string callerNumber = (string)(item.Number ?? "");
                 long timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 int duration = 0;
                 string direction = "inbound";
@@ -141,17 +140,18 @@ public sealed class HistoryHandler
                 // Zeitstempel aus typisierten DateTime property
                 try
                 {
-                    timestamp = new DateTimeOffset(item.Time).ToUnixTimeSeconds();
+                    timestamp = new DateTimeOffset((DateTime)item.Time).ToUnixTimeSeconds();
                 }
                 catch { }
 
                 // Dauer
-                try { duration = item.CallDuration; } catch { }
+                try { duration = (int)item.CallDuration; } catch { }
 
                 // Richtung aus CallState: 0=inbound, 1=outbound, 2=missed, 3=forwarded
                 try
                 {
-                    direction = item.CallState switch
+                    int callState = (int)item.CallState;
+                    direction = callState switch
                     {
                         0 => "inbound",
                         1 => "outbound",
@@ -189,7 +189,7 @@ public sealed class HistoryHandler
     /// Fallback: Liest nur den letzten Anruf über get_DispNumberHistory.
     /// Diese Methode ist nicht im typed interface — dynamic cast erforderlich.
     /// </summary>
-    private object[] GetHistoryViaDispNumberHistory(ClientLineMgrClass com)
+    private object[] GetHistoryViaDispNumberHistory(dynamic com)
     {
         string name = "", number = "", date = "", time = "", duration = "", type = "";
         // get_DispNumberHistory ist nicht im IClientLineMgrDisp interface dokumentiert — dynamic cast
