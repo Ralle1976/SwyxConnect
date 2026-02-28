@@ -56,6 +56,18 @@ public interface ICdsPhoneClientFacade
     [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetServerInfo", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetServerInfoResponse")]
     [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetServerInfoTExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
     CdsServerInfo GetServerInfo();
+
+    [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetUserLoginID", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDResponse")]
+    [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDTExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
+    Guid GetUserLoginID();
+
+    [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDEx", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDExResponse")]
+    [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetUserLoginIDExTExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
+    Guid GetUserLoginIDEx(int UserID);
+
+    [OperationContract(Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentUserName", ReplyAction = "http://tempuri.org/IPhoneClientFacade/GetCurrentUserNameResponse")]
+    [FaultContract(typeof(CdsTException), Action = "http://tempuri.org/IPhoneClientFacade/GetCurrentUserNameTExceptionFault", Name = "TException", Namespace = "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.Exceptions")]
+    int GetCurrentUserName(out string UserName);
 }
 
 // ──────────────────────────────────────────────────────────
@@ -71,6 +83,7 @@ public interface ICdsPhoneClientFacade
 /// Data object matching SWConfigDataSharedLib.WCFUtils.SCustomHeaderData exactly.
 /// Serialized via XmlSerializer, so property names = XML element names.
 /// </summary>
+[System.Xml.Serialization.XmlRoot("SCustomHeaderData")]
 public class CdsCustomHeaderData
 {
     public string? SelectedIpPbxUserName { get; set; }
@@ -200,6 +213,9 @@ public sealed class CdsPhoneClientFacade : IDisposable
         {
             MaxReceivedMessageSize = int.MaxValue,
             OpenTimeout = TimeSpan.FromMilliseconds(7500),
+            SendTimeout = TimeSpan.FromSeconds(15),
+            ReceiveTimeout = TimeSpan.FromSeconds(15),
+            CloseTimeout = TimeSpan.FromSeconds(5),
         };
         binding.ReaderQuotas.MaxStringContentLength = int.MaxValue;
         binding.ReaderQuotas.MaxArrayLength = int.MaxValue;
@@ -291,6 +307,52 @@ public sealed class CdsPhoneClientFacade : IDisposable
         try
         {
             return channel.GetServerInfo();
+        }
+        finally
+        {
+            CloseChannel(channel);
+        }
+    }
+
+    /// <summary>Get the user's login session GUID (used for SIP auth).</summary>
+    public Guid GetUserLoginID()
+    {
+        var factory = GetOrCreateFactory();
+        var channel = factory.CreateChannel();
+        try
+        {
+            return channel.GetUserLoginID();
+        }
+        finally
+        {
+            CloseChannel(channel);
+        }
+    }
+
+    /// <summary>Get login session GUID for a specific userId.</summary>
+    public Guid GetUserLoginIDEx(int userId)
+    {
+        var factory = GetOrCreateFactory();
+        var channel = factory.CreateChannel();
+        try
+        {
+            return channel.GetUserLoginIDEx(userId);
+        }
+        finally
+        {
+            CloseChannel(channel);
+        }
+    }
+
+    /// <summary>Get the current user's name from the CDS session.</summary>
+    public (int userId, string userName) GetCurrentUserName()
+    {
+        var factory = GetOrCreateFactory();
+        var channel = factory.CreateChannel();
+        try
+        {
+            int result = channel.GetCurrentUserName(out string userName);
+            return (result, userName);
         }
         finally
         {

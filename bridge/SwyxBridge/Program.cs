@@ -425,6 +425,40 @@ static class Program
             return;
         }
 
+        // --- CDS User Info (all-in-one diagnostics after login) ---
+        if (req.Method == "cdsGetUserInfo")
+        {
+            if (_cdsAccessToken == null)
+            {
+                if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, "Zuerst cdsLogin aufrufen");
+                return;
+            }
+            string host = "127.0.0.1"; int port = 9094;
+            if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                var p = req.Params.Value;
+                if (p.TryGetProperty("host", out var h) && h.GetString() is string hv) host = hv;
+                if (p.TryGetProperty("port", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) port = pt.GetInt32();
+            }
+            Task.Run(() =>
+            {
+                var info = new Dictionary<string, object?>();
+                try
+                {
+                    using var facade = new CdsPhoneClientFacade(host, port, _cdsAccessToken!, _cdsUsername ?? "");
+                    try { info["currentUserId"] = facade.GetCurrentUserID(); } catch (Exception ex) { info["currentUserIdError"] = ex.Message; }
+                    try { var (uid, name) = facade.GetCurrentUserName(); info["currentUserName"] = name; info["currentUserNameResult"] = uid; } catch (Exception ex) { info["currentUserNameError"] = ex.Message; }
+                    try { var si = facade.GetServerInfo(); info["serverName"] = si?.ServerName; info["serverVersion"] = si?.ServerVersion; info["serverType"] = si?.ServerType; } catch (Exception ex) { info["serverInfoError"] = ex.Message; }
+                    try { info["userLoginId"] = facade.GetUserLoginID().ToString(); } catch (Exception ex) { info["userLoginIdError"] = ex.Message; }
+                    try { info["userLoginIdEx"] = facade.GetUserLoginIDEx(_cdsUserId).ToString(); } catch (Exception ex) { info["userLoginIdExError"] = ex.Message; }
+                    try { var creds = facade.GetSipCredentials(_cdsUserId); info["sipRealm"] = creds?.SipRealm; info["sipUserId"] = creds?.SipUserID; info["sipUserName"] = creds?.SipUserName; } catch (Exception ex) { info["sipCredError"] = ex.Message; }
+                    if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, info);
+                }
+                catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            });
+            return;
+        }
+
         // --- Handler Dispatch ---
         if (_callHandler?.CanHandle(req.Method) == true) { _callHandler.Handle(req); }
         else if (_presenceHandler?.CanHandle(req.Method) == true) { _presenceHandler.Handle(req); }
