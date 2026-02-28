@@ -31,21 +31,26 @@ export default function ContactsView(): React.JSX.Element {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<LocalContact | undefined>(undefined);
 
+  // Retry-Zähler für initiales Laden
+  const [retryCount, setRetryCount] = useState(0);
+
   // Kontakte laden: bei Suchänderung UND initial beim Mounten
   useEffect(() => {
     searchContacts(searchQuery);
+    setRetryCount(0); // Reset retries on new search
   }, [searchQuery, searchContacts]);
 
   // Retry-Mechanismus: Wenn beim ersten Laden keine Kontakte kamen (Bridge noch nicht bereit),
-  // nach kurzer Verzögerung erneut versuchen
+  // nach kurzer Verzögerung erneut versuchen (max 3x)
   useEffect(() => {
-    if (contacts.length === 0 && !loading) {
+    if (contacts.length === 0 && !loading && retryCount < 3) {
       const retryTimer = setTimeout(() => {
+        setRetryCount((c) => c + 1);
         searchContacts(searchQuery);
       }, 3000);
       return () => clearTimeout(retryTimer);
     }
-  }, [contacts.length, loading, searchContacts, searchQuery]);
+  }, [contacts.length, loading, searchContacts, searchQuery, retryCount]);
 
   function handleSearchChange(value: string): void {
     setQuery(value);

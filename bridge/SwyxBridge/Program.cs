@@ -33,6 +33,7 @@ static class Program
     private static System.Timers.Timer? _heartbeat;
     private static StandaloneKestrelHost? _kestrelHost;
 
+    private static CdsPhonebookClient? _cdsPhonebookClient;
     private static string? _cdsAccessToken;
     private static string? _cdsRefreshToken;
     private static int _cdsUserId;
@@ -406,6 +407,128 @@ static class Program
                             accessToken = shortAt,
                             refreshToken = shortRt,
                             error = result.Error
+                        });
+                    }
+                    catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
+        }
+
+        // --- CDS Connect (Login + fetch contacts + user info, all-in-one) ---
+        if (req.Method == "cdsConnect")
+        {
+            try
+            {
+                string host = "127.0.0.1", username = "", password = "";
+                int port = 9094;
+
+                if (req.Params?.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var p = req.Params.Value;
+                    if (p.TryGetProperty("host", out var h) && h.GetString() is string hv) host = hv;
+                    if (p.TryGetProperty("port", out var pt) && pt.ValueKind == System.Text.Json.JsonValueKind.Number) port = pt.GetInt32();
+                    if (p.TryGetProperty("username", out var un) && un.GetString() is string uv) username = uv;
+                    if (p.TryGetProperty("password", out var pw) && pw.GetString() is string pv) password = pv;
+                }
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        // Step 1: Acquire JWT token
+                        using var loginClient = new CdsLoginClient(host, port);
+                        var loginResult = loginClient.AcquireToken(username, password);
+
+                        if (!loginResult.Success)
+                        {
+                            if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new
+                            {
+                                success = false,
+                                error = loginResult.Error ?? "Login fehlgeschlagen"
+                            });
+                            return;
+                        }
+
+                        // Store tokens for subsequent calls
+                        _cdsAccessToken = loginResult.AccessToken;
+                        _cdsRefreshToken = loginResult.RefreshToken;
+                        _cdsUserId = loginResult.UserId;
+                        _cdsUsername = username;
+
+                        var capturedToken = _cdsAccessToken!;
+                        var capturedUsername = username;
+                        var capturedUserId = loginResult.UserId;
+
+                        // Step 2: Try to get user info via PhoneClientFacade
+                        string? serverName = null;
+                        string? userName = null;
+                        int resolvedUserId = capturedUserId;
+
+                        try
+                        {
+                            using var facade = new CdsPhoneClientFacade(host, port, capturedToken, capturedUsername);
+                            try { var si = facade.GetServerInfo(); serverName = si?.ServerName; } catch (Exception ex) { Logging.Warn($"cdsConnect: GetServerInfo: {ex.Message}"); }
+                            try { var (uid, name) = facade.GetCurrentUserName(); userName = name; if (uid > 0) resolvedUserId = uid; } catch (Exception ex) { Logging.Warn($"cdsConnect: GetCurrentUserName: {ex.Message}"); }
+                            if (resolvedUserId <= 0) { try { resolvedUserId = facade.GetCurrentUserID(); } catch (Exception ex) { Logging.Warn($"cdsConnect: GetCurrentUserID: {ex.Message}"); } }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logging.Warn($"cdsConnect: PhoneClientFacade failed: {ex.Message}");
+                        }
+
+                        // Step 3: Try to get phonebook entries via CdsPhonebookClient
+                        var contacts = new List<object>();
+                        CdsPhonebookClient? pbClient = null;
+                        try
+                        {
+                            pbClient = new CdsPhonebookClient(host, port, capturedToken, capturedUsername);
+                            var entries = pbClient.GetAllEntries();
+                            if (entries.Length > 0)
+                            {
+                                foreach (var entry in entries)
+                                {
+                                    contacts.Add(new
+                                    {
+                                        id = entry.EntryId.ToString(),
+                                        name = entry.Name ?? "",
+                                        number = entry.Number ?? "",
+                                        email = entry.Email ?? "",
+                                        department = entry.Description ?? ""
+                                    });
+                                }
+                                Logging.Info($"cdsConnect: Loaded {entries.Length} phonebook entries.");
+
+                                // Register CDS client with ContactHandler for future searches
+                                ContactHandler.SetCdsClient(pbClient);
+                                pbClient = null; // ownership transferred to ContactHandler
+                            }
+                            else
+                            {
+                                Logging.Info("cdsConnect: CdsPhonebookClient returned 0 entries (method may be unsupported).");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logging.Warn($"cdsConnect: CdsPhonebookClient failed: {ex.Message}");
+                        }
+                        finally
+                        {
+                            pbClient?.Dispose();
+                        }
+
+                        // Emit bridgeState connected
+                        JsonRpcEmitter.EmitEvent("bridgeState", new { state = "connected" });
+
+                        if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new
+                        {
+                            success = true,
+                            userId = resolvedUserId,
+                            userName = userName ?? capturedUsername,
+                            serverName = serverName ?? host,
+                            contactCount = contacts.Count,
+                            contacts = contacts.ToArray()
                         });
                     }
                     catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }

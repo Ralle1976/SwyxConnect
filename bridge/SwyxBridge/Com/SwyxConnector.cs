@@ -7,11 +7,21 @@ namespace SwyxBridge.Com;
 /// <summary>
 /// Erstellt und verwaltet die COM-Verbindung zum Swyx Client Line Manager.
 /// Verwendet das typisierte Swyx.Client.ClmgrAPI NuGet-Paket (v14.21.0).
+/// 
+/// Verbindungsmodi:
+///   ATTACH (Standard): SwyxIt! läuft → COM-Objekt nutzt dessen Session. Kein DispInit nötig.
+///   STANDALONE: Ohne SwyxIt! → DispInit(serverName) für eigene Session.
+///
+/// WICHTIG: __ComObject aus ProgID kann nur IDispatch-Methoden (Disp*) direkt via dynamic aufrufen.
+/// Methoden auf Pub/Ex-Interfaces (PubInit, UnInit, PubGetServerFromAutoDetection) 
+/// erfordern typed interface cast (QueryInterface).
+/// 
 /// MUSS auf dem STA-Thread instanziiert und verwendet werden.
 /// </summary>
 public sealed class SwyxConnector : IDisposable
 {
     private const int E_ACCESSDENIED = unchecked((int)0x80070005);
+    private const int E_NOTIMPL = unchecked((int)0x80004001);
 
     // CRITICAL: Static reference prevents GC collection while COM holds reference
     private static SwyxConnector? _instance;
@@ -27,8 +37,10 @@ public sealed class SwyxConnector : IDisposable
     }
 
     /// <summary>
-    /// Verbindet sich mit dem CLMgr COM-Objekt via typisiertem SDK (Standalone-Modus).
-    /// Versucht zuerst Auto-Detektion, dann DispInit mit ServerName.
+    /// Verbindet sich mit dem CLMgr COM-Objekt.
+    /// 
+    /// Wenn serverName angegeben: Versucht Standalone-Modus via DispInit.
+    /// Wenn kein serverName: Attach-Modus — nutzt laufende SwyxIt!-Session.
     /// </summary>
     public void Connect(string? serverName = null)
     {
@@ -39,12 +51,12 @@ public sealed class SwyxConnector : IDisposable
         try
         {
             // ProgID activation → returns __ComObject.
-            // __ComObject can only be cast to COM interfaces, not to coclass types
-            // like ClientLineMgrClass. We store as dynamic for late-bound dispatch.
+            // __ComObject supports QueryInterface for COM interfaces (IClientLineMgrDisp, etc.)
+            // but NOT direct cast to coclass (ClientLineMgrClass).
             var type = Type.GetTypeFromProgID("CLMgr.ClientLineMgr", throwOnError: true);
             var comObj = Activator.CreateInstance(type!);
             _clmgr = comObj ?? throw new InvalidOperationException("COM object creation returned null");
-            Logging.Info("SwyxConnector: COM object created via ProgID (dynamic dispatch).");
+            Logging.Info("SwyxConnector: COM object created via ProgID.");
         }
         catch (COMException ex) when (ex.HResult == E_ACCESSDENIED)
         {
@@ -57,33 +69,59 @@ public sealed class SwyxConnector : IDisposable
                 $"COM-Fehler: 0x{ex.HResult:X8} - {ex.Message}", ex);
         }
 
-        // Step 1: Try auto-detection if no server specified
+        // Step 1: Check if already logged in (Attach-Modus via SwyxIt!)
+        bool alreadyLoggedIn = false;
+        try
+        {
+            alreadyLoggedIn = (int)_clmgr.DispIsLoggedIn != 0;
+        }
+        catch { }
+
+        if (alreadyLoggedIn)
+        {
+            Logging.Info("SwyxConnector: Already logged in via SwyxIt! (Attach-Modus).");
+            LogConnectionState();
+            return;
+        }
+
+        // Step 2: Try auto-detection via typed interface (IClientLineMgrPub2)
         if (string.IsNullOrEmpty(serverName))
         {
             try
             {
-                string detectedServer, detectedBackup;
-                int autoEnabled, serverAvailable;
-                _clmgr.PubGetServerFromAutoDetection(
-                    out detectedServer, out detectedBackup,
-                    out autoEnabled, out serverAvailable);
+                var pub2 = (IClientLineMgrPub2)(object)_clmgr;
+                pub2.PubGetServerFromAutoDetection(
+                    out string detectedServer, out string detectedBackup,
+                    out int autoEnabled, out int serverAvailable);
                 if (serverAvailable != 0 && !string.IsNullOrEmpty(detectedServer))
                 {
                     serverName = detectedServer;
                     Logging.Info($"SwyxConnector: Auto-detected server: {serverName}");
                 }
             }
-            catch (Exception ex) { Logging.Warn($"Auto-detection failed: {ex.Message}"); }
+            catch (InvalidCastException)
+            {
+                Logging.Warn("SwyxConnector: IClientLineMgrPub2 interface not available (auto-detection skipped).");
+            }
+            catch (Exception ex)
+            {
+                Logging.Warn($"SwyxConnector: Auto-detection failed: {ex.Message}");
+            }
         }
 
-        // Step 2: DispInit with server (standalone mode)
+        // Step 3: DispInit with server (Standalone-Modus) — via IDispatch
         if (!string.IsNullOrEmpty(serverName))
         {
             Logging.Info($"SwyxConnector: DispInit({serverName})...");
             try
             {
                 int result = _clmgr.DispInit(serverName);
-                Logging.Info($"SwyxConnector: DispInit returned {result}");
+                if (result == 0)
+                    Logging.Info("SwyxConnector: DispInit erfolgreich.");
+                else if (result == E_NOTIMPL)
+                    Logging.Warn("SwyxConnector: DispInit returned E_NOTIMPL — Standalone-Modus nicht unterstützt. SwyxIt! muss laufen.");
+                else
+                    Logging.Warn($"SwyxConnector: DispInit returned 0x{result:X8} ({result})");
             }
             catch (Exception ex)
             {
@@ -92,23 +130,32 @@ public sealed class SwyxConnector : IDisposable
         }
         else
         {
-            Logging.Info("SwyxConnector: No server specified, using attached SwyxIt! session.");
+            Logging.Info("SwyxConnector: No server specified. Attach-Modus erwartet laufende SwyxIt!-Instanz.");
         }
 
-        // Step 3: Check connection state
+        // Step 4: Check connection state
+        LogConnectionState();
+    }
+
+    private void LogConnectionState()
+    {
         try
         {
-            bool isLoggedIn = (int)_clmgr.DispIsLoggedIn != 0;
+            bool isLoggedIn = (int)_clmgr!.DispIsLoggedIn != 0;
             bool isServerUp = (int)_clmgr.DispIsServerUp != 0;
             string currentServer = (string)(_clmgr.DispGetCurrentServer ?? "");
             string currentUser = (string)(_clmgr.DispGetCurrentUser ?? "");
             Logging.Info($"SwyxConnector: LoggedIn={isLoggedIn}, ServerUp={isServerUp}, Server={currentServer}, User={currentUser}");
+
+            if (!isLoggedIn)
+                Logging.Warn("SwyxConnector: NICHT eingeloggt! Stellen Sie sicher, dass SwyxIt! läuft und angemeldet ist.");
         }
         catch (Exception ex) { Logging.Warn($"SwyxConnector: Status check failed: {ex.Message}"); }
     }
 
     /// <summary>
-    /// Gibt das typisierte COM-Objekt zurück für direkte Aufrufe.
+    /// Gibt das COM-Objekt zurück für direkte Aufrufe.
+    /// Kann via typed cast auf Interfaces wie IClientLineMgrDisp zugreifen.
     /// </summary>
     public dynamic? GetCom() => _clmgr;
 
@@ -138,17 +185,30 @@ public sealed class SwyxConnector : IDisposable
     }
 
     /// <summary>
-    /// Trennt die COM-Verbindung sauber (UnInit + FinalReleaseComObject).
+    /// Trennt die COM-Verbindung sauber.
+    /// UnInit ist auf IClientLineMgrEx6 Interface (typed cast nötig).
     /// </summary>
     public void Disconnect()
     {
         if (_clmgr == null) return;
+
+        // UnInit via typed interface (IClientLineMgrEx6)
         try
         {
-            _clmgr.UnInit();
-            Logging.Info("SwyxConnector: UnInit called.");
+            var ex6 = (IClientLineMgrEx6)(object)_clmgr;
+            ex6.UnInit();
+            Logging.Info("SwyxConnector: UnInit called via IClientLineMgrEx6.");
         }
-        catch (Exception ex) { Logging.Warn($"UnInit failed: {ex.Message}"); }
+        catch (InvalidCastException)
+        {
+            Logging.Info("SwyxConnector: IClientLineMgrEx6 not available (UnInit skipped — Attach-Modus).");
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"SwyxConnector: UnInit failed: {ex.Message}");
+        }
+
+        // Release COM object
         try
         {
             Marshal.FinalReleaseComObject((object)_clmgr);

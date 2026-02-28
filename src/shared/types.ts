@@ -151,6 +151,11 @@ export interface AppSettings {
   numberOfLines: number;
   externalLinePrefix: string;
   externalLinePrefixEnabled: boolean;
+  pbxServer: string;
+  cdsHost?: string;
+  cdsPort?: number;
+  cdsUsername?: string;
+  // Note: cdsPassword is NEVER stored in settings
 }
 
 export interface TeamsTokens {

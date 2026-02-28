@@ -16,8 +16,14 @@ const DEFAULTS: AppSettings = {
   pluginsDirectory: '',
   startMinimized: false,
   closeToTray: true,
+  numberOfLines: 2,
+  externalLinePrefix: '0',
+  externalLinePrefixEnabled: true,
+  pbxServer: '',
+  cdsHost: '',
+  cdsPort: 9094,
+  cdsUsername: '',
 };
-
 export class SettingsStore {
   private data: AppSettings;
   private readonly filePath: string;

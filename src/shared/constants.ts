@@ -27,6 +27,7 @@ export const IPC_CHANNELS = {
   MUTE: 'swyx:mute',
   UNMUTE: 'swyx:unmute',
   SET_NUMBER_OF_LINES: 'swyx:setNumberOfLines',
+  CDS_CONNECT: 'swyx:cdsConnect',
   // Teams Integration (renderer → main)
   TEAMS_ADD_ACCOUNT: 'swyx:teamsAddAccount',
   TEAMS_REMOVE_ACCOUNT: 'swyx:teamsRemoveAccount',

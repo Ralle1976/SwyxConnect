@@ -18,6 +18,10 @@ interface SettingsStoreState {
   numberOfLines: number;
   externalLinePrefix: string;
   externalLinePrefixEnabled: boolean;
+  pbxServer: string;
+  cdsHost: string;
+  cdsPort: number;
+  cdsUsername: string;
   // Actions
   setTheme: (theme: Theme) => void;
   toggleSidebar: () => void;
@@ -32,6 +36,10 @@ interface SettingsStoreState {
   setNumberOfLines: (count: number) => void;
   setExternalLinePrefix: (prefix: string) => void;
   setExternalLinePrefixEnabled: (enabled: boolean) => void;
+  setPbxServer: (server: string) => void;
+  setCdsHost: (host: string) => void;
+  setCdsPort: (port: number) => void;
+  setCdsUsername: (username: string) => void;
   // Sync mit Main Process
   loadFromMain: () => Promise<void>;
   saveToMain: (patch: Partial<AppSettings>) => Promise<void>;
@@ -52,6 +60,10 @@ export const useSettingsStore = create<SettingsStoreState>()(
       numberOfLines: 2,
       externalLinePrefix: '0',
       externalLinePrefixEnabled: true,
+      pbxServer: '',
+      cdsHost: '',
+      cdsPort: 9094,
+      cdsUsername: '',
 
       setTheme: (theme) => {
         set({ theme });
@@ -96,7 +108,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
       },
       setNumberOfLines: (count) => {
         set({ numberOfLines: count });
-        get().saveToMain({ numberOfLines: count } as Partial<AppSettings>);
+        get().saveToMain({ numberOfLines: count });
         // Sofort an Bridge/COM senden — Bridge emittiert lineStateChanged Event
         // welches automatisch die Lines im UI aktualisiert
         if (window.swyxApi?.setNumberOfLines) {
@@ -105,11 +117,27 @@ export const useSettingsStore = create<SettingsStoreState>()(
       },
       setExternalLinePrefix: (prefix) => {
         set({ externalLinePrefix: prefix });
-        get().saveToMain({ externalLinePrefix: prefix } as Partial<AppSettings>);
+        get().saveToMain({ externalLinePrefix: prefix });
       },
       setExternalLinePrefixEnabled: (enabled) => {
         set({ externalLinePrefixEnabled: enabled });
-        get().saveToMain({ externalLinePrefixEnabled: enabled } as Partial<AppSettings>);
+        get().saveToMain({ externalLinePrefixEnabled: enabled });
+      },
+      setPbxServer: (server) => {
+        set({ pbxServer: server });
+        get().saveToMain({ pbxServer: server });
+      },
+      setCdsHost: (host) => {
+        set({ cdsHost: host });
+        get().saveToMain({ cdsHost: host });
+      },
+      setCdsPort: (port) => {
+        set({ cdsPort: port });
+        get().saveToMain({ cdsPort: port });
+      },
+      setCdsUsername: (username) => {
+        set({ cdsUsername: username });
+        get().saveToMain({ cdsUsername: username });
       },
 
       loadFromMain: async () => {
@@ -127,9 +155,13 @@ export const useSettingsStore = create<SettingsStoreState>()(
               audioInputVolume: settings.audioInputVolume ?? 80,
               audioOutputVolume: settings.audioOutputVolume ?? 80,
               teamsEnabled: settings.teamsEnabled ?? false,
-              numberOfLines: ((settings as Record<string, unknown>).numberOfLines as number | undefined) ?? 2,
-              externalLinePrefix: ((settings as Record<string, unknown>).externalLinePrefix as string | undefined) ?? '0',
-              externalLinePrefixEnabled: ((settings as Record<string, unknown>).externalLinePrefixEnabled as boolean | undefined) ?? true,
+              numberOfLines: settings.numberOfLines ?? 2,
+              externalLinePrefix: settings.externalLinePrefix ?? '0',
+              externalLinePrefixEnabled: settings.externalLinePrefixEnabled ?? true,
+              pbxServer: settings.pbxServer ?? '',
+              cdsHost: settings.cdsHost ?? '',
+              cdsPort: settings.cdsPort ?? 9094,
+              cdsUsername: settings.cdsUsername ?? '',
             });
           }
         } catch { /* Bridge noch nicht bereit */ }
@@ -157,6 +189,10 @@ export const useSettingsStore = create<SettingsStoreState>()(
         numberOfLines: state.numberOfLines,
         externalLinePrefix: state.externalLinePrefix,
         externalLinePrefixEnabled: state.externalLinePrefixEnabled,
+        pbxServer: state.pbxServer,
+        cdsHost: state.cdsHost,
+        cdsPort: state.cdsPort,
+        cdsUsername: state.cdsUsername,
       }),
     }
   )

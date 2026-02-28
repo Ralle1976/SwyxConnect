@@ -48,9 +48,15 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_CONTACTS, async (_event, query: string) => {
-    return bridgeManager.sendRequest('searchContacts', {
-      query,
-    }) as Promise<Contact[]>;
+    try {
+      const result = await bridgeManager.sendRequest('searchContacts', { query });
+      const contacts = Array.isArray(result) ? result : [];
+      console.log(`[IPC] GET_CONTACTS query='${query}' → ${contacts.length} Ergebnisse`);
+      return contacts;
+    } catch (err) {
+      console.error('[IPC] GET_CONTACTS Fehler:', err);
+      return [];
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_HISTORY, async () => {
@@ -105,6 +111,9 @@ export function registerIpcHandlers(
     return bridgeManager.sendRequest('setNumberOfLines', { count });
   });
 
+  ipcMain.handle(IPC_CHANNELS.CDS_CONNECT, async (_event, params: { host: string; port: number; username: string; password: string }) => {
+    return bridgeManager.sendRequest('cdsConnect', params);
+  });
   ipcMain.handle(IPC_CHANNELS.MUTE, async (_event, lineId: number) => {
     return bridgeManager.sendRequest('mute', { lineId });
   });

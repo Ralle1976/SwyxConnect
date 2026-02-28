@@ -43,6 +43,8 @@ const swyxApi = {
   setNumberOfLines: (count: number): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.SET_NUMBER_OF_LINES, count),
 
+  cdsConnect: (params: { host: string; port: number; username: string; password: string }): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CDS_CONNECT, params),
   // --- Abfragen ---
   getLines: (): Promise<LineInfo[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_LINES),

@@ -11,6 +11,9 @@ import { PresenceStatus } from '../shared/types'
 import { TeamsPresenceService } from './services/TeamsPresenceService'
 import { IPC_CHANNELS } from '../shared/constants'
 
+// GPU-Beschleunigung deaktivieren — Softphone braucht kein GPU,
+// verhindert Crashes in VMs, RDP-Sessions und WSL2-Umgebungen
+app.disableHardwareAcceleration()
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 const bridgeManager = new BridgeManager()
@@ -211,13 +214,28 @@ app.whenReady().then(() => {
 
     // Auto-connect COM when bridge process is ready
     if (state === BridgeState.Connected) {
-      console.log('[Main] Bridge-Prozess bereit, sende connect...')
+      const pbxServer = settingsStore.get('pbxServer') || ''
+      console.log(`[Main] Bridge-Prozess bereit, sende connect (server=${pbxServer || 'auto'})...`)
       bridgeManager
-        .sendRequest('connect')
+        .sendRequest('connect', pbxServer ? { serverName: pbxServer } : undefined)
         .then((info) => {
+          const infoObj = info as Record<string, unknown>
           console.log('[Main] COM verbunden:', JSON.stringify(info))
-          // Notify renderer that COM is connected
-          mainWindow?.webContents.send(IPC_CHANNELS.BRIDGE_STATE_CHANGED, BridgeState.Connected)
+          // If COM is not logged in (SwyxIt! not running), try CDS login
+          if (infoObj && infoObj['loggedIn'] === false) {
+            const cdsHost = settingsStore.get('cdsHost')
+            const cdsPort = settingsStore.get('cdsPort') ?? 9094
+            const cdsUsername = settingsStore.get('cdsUsername')
+            if (cdsHost && cdsUsername) {
+              console.log(`[Main] COM nicht eingeloggt, versuche CDS-Login (${cdsHost}:${cdsPort})...`)
+              // Note: password is not stored — CDS connect will fail without password
+              // The user must trigger cdsConnect from the UI with their password
+              console.log('[Main] CDS-Auto-Login nicht möglich (kein Passwort gespeichert). Bitte in Einstellungen anmelden.')
+            }
+          } else {
+            // Notify renderer that COM is connected
+            mainWindow?.webContents.send(IPC_CHANNELS.BRIDGE_STATE_CHANGED, BridgeState.Connected)
+          }
         })
         .catch((err: Error) => {
           console.error('[Main] COM connect fehlgeschlagen:', err.message)
