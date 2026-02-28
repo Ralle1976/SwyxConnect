@@ -59,30 +59,54 @@ public interface ICdsPhoneClientFacade
 }
 
 // ──────────────────────────────────────────────────────────
-// JWT Custom SOAP Header — matches SwyxWare's SCustomHeader
-// Injected by SClientMessageInspector in the original CLMgr.
+// JWT Custom SOAP Header — exact match of SwyxWare's SCustomHeader
+// Decompiled from IpPbxCDSSharedLib.dll (SWConfigDataSharedLib.WCFUtils)
+//
+// Header Name:      "IPPBX_HEADER"
+// Header Namespace: "LANPHONE.COM"
+// Content: XmlSerializer-serialized SCustomHeaderData inside <IPPBX_HEADER Key="...">
 // ──────────────────────────────────────────────────────────
+
+/// <summary>
+/// Data object matching SWConfigDataSharedLib.WCFUtils.SCustomHeaderData exactly.
+/// Serialized via XmlSerializer, so property names = XML element names.
+/// </summary>
+public class CdsCustomHeaderData
+{
+    public string? SelectedIpPbxUserName { get; set; }
+    public string? ClientVersion { get; set; }
+    public string? AccessToken { get; set; }
+    public string? RequestId { get; set; }
+}
 
 internal sealed class CdsCustomHeader : MessageHeader
 {
-    private readonly string _accessToken;
-    private readonly string _username;
+    private static readonly System.Xml.Serialization.XmlSerializer _serializer =
+        new System.Xml.Serialization.XmlSerializer(typeof(CdsCustomHeaderData));
+
+    private readonly CdsCustomHeaderData _data;
 
     public CdsCustomHeader(string accessToken, string username)
     {
-        _accessToken = accessToken;
-        _username = username;
+        _data = new CdsCustomHeaderData
+        {
+            AccessToken = accessToken,
+            SelectedIpPbxUserName = username,
+            ClientVersion = "14.25.0.0",
+            RequestId = ""
+        };
     }
 
-    public override string Name => "SCustomHeaderData";
-    public override string Namespace => "http://schemas.datacontract.org/2004/07/SWConfigDataSharedLib.WCFUtils";
+    public override string Name => "IPPBX_HEADER";
+    public override string Namespace => "LANPHONE.COM";
 
     protected override void OnWriteHeaderContents(XmlDictionaryWriter writer, MessageVersion messageVersion)
     {
-        writer.WriteElementString("AccessToken", _accessToken);
-        writer.WriteElementString("ClientVersion", "14.25.0.0");
-        writer.WriteElementString("RequestId", string.Empty);
-        writer.WriteElementString("SelectedIpPbxUserName", _username);
+        // Match original: XmlSerializer → string → WriteElementString("IPPBX_HEADER", "Key", serializedXml)
+        using var sw = new System.IO.StringWriter();
+        _serializer.Serialize(sw, _data);
+        var serializedXml = sw.ToString().Trim();
+        writer.WriteElementString("IPPBX_HEADER", "Key", serializedXml);
     }
 }
 
