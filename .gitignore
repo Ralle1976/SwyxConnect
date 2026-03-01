@@ -44,3 +44,7 @@ resources/bridge/
 
 # COM debug dumps
 *_members.txt
+
+# Agent context (intern, nicht öffentlich)
+AGENTS.md
+.sisyphus/
