@@ -3,6 +3,9 @@ productName: SwyxConnect
 directories:
   buildResources: resources
   output: dist
+asar: false
+asarUnpack:
+  - '**/*.node'
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -17,6 +20,10 @@ extraResources:
     to: bridge/
     filter:
       - '**/*'
+  - from: resources/icon.ico
+    to: icon.ico
+  - from: resources/icon.png
+    to: icon.png
 win:
   target:
     - target: nsis

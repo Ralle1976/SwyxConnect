@@ -122,6 +122,6 @@ export class TrayIcon {
       ? process.resourcesPath
       : path.join(app.getAppPath(), 'resources');
 
-    return path.join(resourcesPath, 'icons', iconName);
+    return path.join(resourcesPath, iconName);
   }
 }

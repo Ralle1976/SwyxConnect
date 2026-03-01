@@ -49,7 +49,7 @@ function createMainWindow(): BrowserWindow {
     show: false,
     frame: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    icon: join(__dirname, '../../resources/icon.ico'),
+    icon: app.isPackaged ? join(process.resourcesPath, 'icon.ico') : join(__dirname, '../../resources/icon.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
