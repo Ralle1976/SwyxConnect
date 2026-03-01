@@ -1,5 +1,6 @@
 appId: com.ralle1976.swyxconnect
 productName: SwyxConnect
+copyright: Copyright © 2026 Ralle1976
 directories:
   buildResources: resources
   output: dist
@@ -12,21 +13,35 @@ files:
   - '!scripts/*'
   - '!electron.vite.config.*'
   - '!{.eslintrc,.gitignore,tsconfig.json}'
+  - '!dist/SwyxConnect/*'
 extraResources:
   - from: out/bridge/
     to: bridge/
     filter:
       - '**/*'
+      - '!*.pdb'
 win:
   target:
+    # 'dir' funktioniert auf WSL2/Linux, 'nsis' braucht Wine
     - target: dir
       arch:
-        - x64
+        - ia32
+    # NSIS-Installer: Auf Windows bauen oder Wine installieren
+    # - target: nsis
+    #   arch:
+    #     - ia32
   icon: resources/icon.ico
   signAndEditExecutable: false
   forceCodeSigning: false
+  artifactName: '${productName}-${version}-Setup.${ext}'
 nsis:
   oneClick: false
   perMachine: true
   allowToChangeInstallationDirectory: true
-  shortcutName: SwyxConnect by Ralle1976
+  shortcutName: SwyxConnect
+  uninstallDisplayName: SwyxConnect
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  menuCategory: Swyx
