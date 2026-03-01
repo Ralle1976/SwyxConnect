@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# .NET build (alle Projekte)
+bridge/*/bin/
+bridge/*/obj/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Electron
+*.asar
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Build artifacts
+resources/bridge/
+*.tsbuildinfo
+
+# COM debug dumps
+*_members.txt
+
+# Agent context (intern, nicht öffentlich)
+AGENTS.md
+.sisyphus/
+
+# Lokale Test-Scripts mit Zugangsdaten
+scripts/test-dispinit.mjs

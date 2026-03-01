@@ -1,0 +1,18 @@
+Windows Registry Editor Version 5.00
+
+; ============================================================================
+; SwyxConnect — CLMgr COM-Registrierung ENTFERNEN
+; ============================================================================
+; Entfernt die COM-Registrierung fuer CLMgr Standalone-Betrieb.
+; Als Administrator ausfuehren (Rechtsklick → Zusammenfuehren)
+; ============================================================================
+
+; --- AppID entfernen ---
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Classes\AppID\{F8E552A5-4C00-11D3-80BC-00105A653379}]
+
+; --- CLSID entfernen ---
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\{F8E552F8-4C00-11D3-80BC-00105A653379}]
+
+; --- ProgID entfernen ---
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLMgr.ClientLineMgr]
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLMgr.ClientLineMgr.2]
