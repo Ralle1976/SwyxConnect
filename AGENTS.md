@@ -167,8 +167,260 @@ Windows Certificate Store (CurrentUser\My):
 | Interop.CLMgr.dll | .NET (COM Interop) | Vollständige COM-Schnittstelle — keine Tunnel-Methoden |
 | CLMgr.exe | Native C++ (14MB) | **Tunnel ist hier** — nicht decompilierbar mit .NET-Tools |
 
-**Nächster Schritt**: Ghidra-Analyse von CLMgr.exe für native x86 Disassembly.
+---
 
+## Reverse Engineering: CLMgr.exe (Native x86 Disassembly)
+
+### Übersicht
+
+**Ziel**: CLMgr.exe ist die zentrale native Komponente, die den RemoteConnector-Tunnel,
+CDS-Verbindungen und SIP/CSTA verwaltet. Da alle drei COM-Init-Methoden E_NOTIMPL sind,
+wurde CLMgr.exe mit radare2 disassembliert, um die interne Architektur zu verstehen und
+langfristig eine Standalone-Lösung ohne SwyxIt!.exe zu ermöglichen.
+
+**Tool**: radare2 6.1.0 (manuell installiert auf WSL2, kein sudo verfügbar)
+**Binary**: CLMgr.exe — 14.149.528 Bytes, PE32 x86, 1520 Imports, 0 Exports
+**PDB-Pfad**: `C:\a\1\b\Win32\Release\CLMgr.pdb` (Azure DevOps Build, November 2025)
+**Kompiliert**: 25. November 2025
+
+### Analysemethodik
+
+- `aaa` (Full Analysis) ist bei 14MB nicht praktikabel (Timeout)
+- Stattdessen: `pd N @ addr` für gezieltes Disassembly + `/x` für Hex-Pattern-Suche
+- Methodennamen extrahiert über String-Suche in PE-Strings (250+ Methoden gefunden)
+- Funktionsadressen gefunden via `push <address>` Binary Search (zuverlässigste Methode)
+- `scr.color=0` für saubere Ausgabe ohne ANSI-Escapes
+
+### Disassemblierte Funktionen
+
+#### CCLineMgr::Init (0x4c225f) — Server-Erkennung
+- Prüft ob Server-Adresse gesetzt, sonst ruft `GetServerFromAutoDetection`
+- Setzt `[edi+0x34]` = CDS-Adresse
+- Delegiert an `CCLineMgr::InitEx`
+
+#### CCLineMgr::InitEx (0x4d3d7c) — Haupt-Initialisierung
+- Initialisiert inneres CLineMgr-Objekt `[edi+0x70]`
+- Ruft `CClientConfigBase::CDSConnect` für CDS-Verbindung
+- Bei Fehler: HRESULT in `[edi+0x68]` gespeichert
+- Delegiert an `CLineMgr::InitUser` für Session-Aufbau
+
+#### CClientConfigBase::CDSConnect (0x62b5a2) — CDS-Verbindung
+- Baut WCF-Verbindung zum CDS auf
+- Nutzt `ClientCDS::Connect` (0x602b3b) als Kern-Routine
+
+#### ClientCDS::Connect (0x602b3b) — Vollständiger Auth-Flow (~7KB)
+
+**Die zentrale CDS-Verbindungsfunktion. Vollständig disassembliert.**
+
+Funktionssignatur: `ret 0x1c` = 7 DWORD-Parameter:
+- `[ebp+8]` = Trusted-Flag (Byte) — steuert zwei verschiedene Auth-Pfade
+- `[ebp+0xc]` = Servername (BSTR)
+- `[ebp+0x10]` = Username (BSTR)
+- `[ebp+0x14..0x20]` = weitere Parameter
+
+**Trusted Path (Windows Auth):**
+1. Ruft `LoginWithFederatedAccount` → Ergebnis-Codes:
+   - 2: "LoginWithFederatedAccount succeeded" ✅
+   - 1: E_ABORT (0x80004004)
+   - 3: "No IpPbx user found" (0x80090322)
+   - 4: "User is locked" (0x80070533)
+   - 5: "ServiceUnavailable" (0x800706ba)
+   - 6: "Not Allowed" (0x80070032)
+   - 7: "Not Licensed" (0x80040112)
+
+**Non-Trusted Path (Username/Password):**
+1. Ruft `LoginWithCurrentWindowsAccount` → zusätzliche Codes:
+   - 2: "Invalid Credentials" (0x80070005)
+   - 3: "User's password expired"
+   - 6: "Login with user login and password is not allowed." (0x8007052f)
+   - 7: "Missing credentials. Password Reset Request." (0x80097019)
+   - 8: "Login with display name ist not supported." (0x80070523)
+
+**Post-Auth Sequenz:**
+1. "Get PhoneClient Facade" → `[edi+0xec]`
+2. "Get Files Facade" → `[edi+0xf0]`
+3. "Get UserPhoneBook Enum" → `[edi+0x100]`
+4. Port 0x7d00 (32000) — Verbindung zum "Client Line Manager" Service
+5. "CheckCDSVersion" / "###### Skipping CheckClientVersion!"
+6. "CheckClientVersion"
+7. "TrimmingWorkingSet" → `SetProcessWorkingSetSize(-1,-1)`
+8. "Done" → return `al=1` (Erfolg) oder `al=0` (Fehler)
+
+#### CLineMgr::InitUser (0x56b553) — Session-Aufbau
+- Ruft SIP/CSTA-Session-Initialisierung (0x5ca9eb) — noch nicht vollständig disassembliert
+- Konfiguriert Leitungen und Event-Handling
+
+#### CLineMgr::ReInit (0x5705a5) — Tunnel-Neustart
+- Loggt "CLineMgr::ReInit" und "Try to re-initialize line manager after a server down phase"
+- Prüft `[edi+0x10b0]` und `[edi+0x10b1]` Flags
+- Ruft Worker-Funktion `0x56f5cb` wenn Flag gesetzt
+- Ruft vtable `[eax+0xbc]` mit Parameter -1
+- Kleine Funktion, `ret 8` (2 Parameter)
+
+#### CCLineMgr::GetSelectedLine — Leitungsauswahl
+- Liest aktuelle Leitungsnummer aus Objekt-Offset
+- Einfache Accessor-Funktion
+
+### Tunnel-Architektur (aus Strings + RTTI)
+
+#### Klassen-Hierarchie
+```
+CTunnelConnector (TryStart, Stop, OnStatusChange)
+├── CTunnelConnCfg (GetCertFromCDS, StoreCertificate)
+├── CConnectorClient (TunnelConnected, TunnelStarted, TunnelDisconnected,
+│                     OnTunnelConnectEvent, OnTunnelDiscEvent)
+├── CClientTunnel (Start, Stop, StartTunnelMgr, OnOutConnected,
+│                  OnTunnelConnectedEvent, OnDisconnected, OnTLSConnectionTimeout)
+│   └── CClientTunnelMgr (Start, Stop, SendMsg, DecodeMsg, ProcessMsg)
+│       ├── ProcessKeepAlive, ProcessDisableData, ProcessEnableData
+│       ├── ProcessConfigClient, ProcessConToMux, ProcessDiscFromMux
+│       ├── ProcessDiscTCP, ProcAllocRTPPortPairs
+│       ├── ProcessConnectRTP, ProcessDisconnectRTP
+│       ├── OnNewTCPConnection, OnTCPInConnected, OnTCPConnectEvent
+│       └── OnDisconnected, OnDisconnectEvent, OnKeepAliveTimeout
+├── CReactorSocket → CTCPReactorSocket, CTLSReactorSocket, CUDPReactorSocket
+├── CMultiplexer (CMuxConnector)
+└── CStreamModule
+```
+
+#### Tunnel-Zustände
+```
+Idle → Disconnected → Connecting → Connected → Started (oder Failed/NoConfig)
+```
+
+#### Tunnel-Nachrichtentypen (15+ proprietäres Binärprotokoll)
+```
+SCTunnelMsg, SCKeepAliveMsg, SCDisableDataMsg, SCEnableDataMsg,
+SCClientVersionMsg, SCTCPConnectMsg, SCTCPDisconnectMsg,
+SCRTPPortPairsMsg, SCConnectToMuxMsg, SCDisconnectFromMuxMsg,
+SCConfigureClientMsg, SCConnectRTPMsg, SCUpdateRTPMsg,
+SCDisconnectRTPMsg, SCAllocateRTPPortPairsMsg, SCDisconnectTCPMsg
+```
+
+#### CTunnelConnector::TryStart (~0x5b46f7)
+- Nimmt `[ebp+8]` und `[ebp+0xc]` als Parameter
+- Ruft Validierung via `0x48e896`
+- Erstellt Lock auf `[edi+0x64]`, liest Tunnel-Config von `[edi+0x58]`
+- Ruft `CTunnelConnCfg::StoreCertificate` — speichert Zertifikat-Thumbprint
+- Delegiert an `0x973920` (CClientTunnel::Start)
+
+#### CClientTunnel::Start (0x974ee0 Bereich)
+- Prüft `[edi+0x8310]` — wenn null, allokiert 0xC4 Bytes → neues Tunnel-Objekt via `0x6bf1f1`
+- Erstellt ReactorContainer (Fehler loggt "Could not create ReactorContainer")
+- `ret 0x18` = 6 DWORD-Parameter
+
+### Netzwerk-Layer (aus IAT-Analyse)
+
+#### Statisch gelinkte Bibliotheken
+- **OpenSSL**: TLS-Verschlüsselung für Tunnel. Quellpfad: `..\\openssl\\ssl\\rio\\rio_notifier.c`
+- **reSIProcate**: SIP/CSTA Stack. Quellpfad: `C:\\a\\1\\s\\rutil\\FdPoll.cxx`
+- **WinHTTP**: NUR für Proxy-Konfiguration (5 Funktionen: WinHttpOpen, GetProxyForUrl, etc.)
+
+#### IAT Call-Trace
+```
+WSASocketA (0xd30904): 2 Aufrufe bei 0x7d9626 und 0x7d9645
+  Quelle: openssl/ssl/rio/rio_notifier.c — OpenSSL RIO Notifier
+  Erster Aufruf mit flags=0x80 (WSA_FLAG_OVERLAPPED), Retry mit flags=0
+
+WSASend (0xd30950): 2 Aufrufe bei 0xbc4933 und 0xc0143e
+  Generischer Socket-Send-Wrapper, nutzt [edi+0x2c] als Socket-Handle
+
+WSARecv (0xd30928): 1 Aufruf bei 0xc0116e
+  Nutzt [edi+0x48] als Socket-Handle, Error 997 (WSA_IO_PENDING) ist erwartet
+
+WSAPoll (0xd308fc): 1 Aufruf bei 0x77053c
+  Quelle: C:\a\1\s\rutil\FdPoll.cxx — reSIProcate FdPoll
+```
+
+### COM Factory Pattern
+
+CLMgr verwendet ATL Singleton Class Factory:
+```
+CComClassFactorySingleton<CClientLineMgr>  — Singleton-Pattern
+CComClassFactorySingleton<CClientLineMgrQA> — QA-Variante
+CComCoClass<CClientLineMgr, &CLSID_ClientLineMgr>
+CComAggObject<CClientLineMgr>              — unterstützt Aggregation
+CComObject<CClientLineMgr>                 — Standard-Objekt
+```
+
+### Objekt-Layout (CLineMgr / CCLineMgr / CClientTunnel)
+
+```
+# CCLineMgr/CClientLineMgr Objekt (this = edi)
+[edi+0x34]    — CDS-Adresse (String)
+[edi+0x68]    — HRESULT Fehlercode (gesetzt von CDSConnect bei Fehler)
+[edi+0x70]    — Inneres CLineMgr-Objekt (Pointer)
+[edi+0xb4]    — Connected-Flag (Byte)
+[edi+0xb5]    — Auth-Flag (Byte, geprüft bei Federated Login)
+[edi+0xb8]    — Sub-Objekt (geschrieben nach erfolgreichem Login)
+[edi+0xd0]    — Sub-Objekt (Login-Ergebnis)
+[edi+0xe8]    — CDS-Client Sub-Objekt (LibManager)
+[edi+0xec]    — PhoneClient Facade
+[edi+0xf0]    — Files Facade
+[edi+0xf4]    — Weiteres Facade
+[edi+0x100]   — UserPhoneBook Enum
+[edi+0x10b0]  — ReInit Flag 1
+[edi+0x10b1]  — ReInit Flag 2
+[edi+0x10c]   — Logging ID
+[edi+0x1588]  — Critical Section (ReInit)
+[edi+0x1c0]   — Verbindungsinfo Sub-Objekt
+
+# CClientTunnel Objekt
+[edi+0x74]    — Tunnel Logging ID
+[edi+0x8310]  — Tunnel Manager Pointer (CClientTunnelMgr)
+
+# CTunnelConnector Objekt
+[edi+0x58]    — Tunnel-Konfiguration
+[edi+0x60]    — Tunnel-ID (Logging)
+[edi+0x64]    — Lock-Objekt
+```
+
+### Quellpfad-Hinweise
+```
+C:\a\1\b\Win32\Release\CLMgr.pdb        — Azure DevOps Build
+C:\a\1\s\rutil\FdPoll.cxx               — reSIProcate Library
+..\openssl\ssl\rio\rio_notifier.c        — OpenSSL RIO
+C:\a\1\s\Shared Components\uaCSTASipConnector\CstaSessionHandler.cpp
+```
+
+### Machbarkeitsanalyse: Standalone ohne SwyxIt!.exe
+
+#### Fazit
+
+Der Tunnel ist tief in CLMgr.exe eingebettet:
+- OpenSSL TLS (statisch gelinkt, ~300KB Code)
+- reSIProcate SIP/CSTA Stack (statisch gelinkt)
+- Proprietäres binäres Tunnel-Protokoll (15+ Nachrichtentypen)
+- Zertifikatsverwaltung über CDS
+- Multiplexer für TCP/UDP/RTP
+- Reactor Pattern mit asynchronen Events
+
+**Empfehlung**: Kill-after-tunnel bleibt Produktions-Architektur.
+
+**Experimenteller Ansatz (R&D)**:
+1. C++ Programm schreiben: `LoadLibrary("CLMgr.exe")` → `GetProcAddress("DllGetClassObject")`
+2. ATL Class Factory nutzen um `CClientLineMgr` zu erstellen
+3. `Init()` → `InitEx()` → `CDSConnect()` Kette aufrufen
+4. Falls Tunnel startet → kein SwyxIt!.exe nötig
+
+### Noch zu disassemblieren
+
+| Adresse | Funktion | Status |
+|---------|----------|--------|
+| 0x5ca9eb | SIP/CSTA Session-Initialisierung (aus InitUser) | Ausstehend |
+| 0x4c9895 | AutoDetection-Implementierung | Ausstehend |
+| 0x973920 | CClientTunnel::Start (vollständig) | Teilweise |
+
+### radare2 Nutzung (Referenz für Agenten)
+
+```bash
+# Wrapper-Script (enthält alle Umgebungsvariablen)
+/home/tango/.local/r2/r2.sh -q -e 'bin.relocs=false' -e 'scr.color=0' \
+  -c 'BEFEHLE' "/mnt/c/Program Files (x86)/Swyx/SwyxIt!/CLMgr.exe"
+
+# WICHTIG: Full Analysis (aaa) funktioniert NICHT bei 14MB Binary (Timeout)
+# Stattdessen: pd N @ addr + /x hex für gezielte Analyse
+```
 ---
 
 ## COM-API Referenz (SDK-typisiert)
