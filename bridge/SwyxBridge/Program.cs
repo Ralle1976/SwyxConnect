@@ -95,43 +95,42 @@ static class Program
 
     private static void InitializeBridge(StaDispatcher sta)
     {
-        // Step 1: WindowHook starten — unterdrückt SwyxIt!-Fenster SOFORT
+        // Step 1: WindowHook starten — unterdrückt SwyxIt!-Fenster während Tunnel-Aufbau
         _windowHook = new WindowHook();
         _windowHook.Start();
 
-        // Step 2: SwyxIt! als Tunnel-Provider starten (falls nicht bereits aktiv)
-        if (!SwyxItLauncher.IsRunning())
+        // Step 2: SwyxIt! als temporären Tunnel-Provider starten
+        // Nach Tunnel-Aufbau wird SwyxIt! gekillt — CLMgr hält den Tunnel eigenständig
+        var launchResult = SwyxItLauncher.Launch(tunnelTimeoutMs: 30000);
+        
+        JsonRpcEmitter.EmitEvent("swyxItStatus", new {
+            running = SwyxItLauncher.IsRunning(),
+            tunnelAvailable = launchResult.TunnelAvailable,
+            processId = launchResult.ProcessId,
+            path = launchResult.SwyxItPath,
+            swyxItKilled = launchResult.SwyxItKilled,
+            alreadyRunning = launchResult.AlreadyRunning,
+            error = launchResult.Error
+        });
+
+        if (launchResult.TunnelAvailable)
         {
-            Logging.Info("SwyxIt! nicht aktiv — starte als unsichtbaren Tunnel-Provider...");
-            var launchResult = SwyxItLauncher.Launch(tunnelTimeoutMs: 30000);
-            if (launchResult.Success)
-            {
-                if (launchResult.TunnelAvailable)
-                    Logging.Info($"SwyxIt! gestartet (PID {launchResult.ProcessId}), Tunnel verfügbar nach {launchResult.WaitTimeMs}ms.");
-                else
-                    Logging.Warn($"SwyxIt! gestartet (PID {launchResult.ProcessId}), aber Tunnel noch nicht verfügbar. Manuelles Anmelden in SwyxIt! erforderlich.");
-            }
+            if (launchResult.SwyxItKilled)
+                Logging.Info($"Tunnel offen. SwyxIt! gekillt — CLMgr hält Tunnel. WindowHook nicht mehr nötig.");
             else
+                Logging.Info("Tunnel offen (war bereits verfügbar).");
+            // WindowHook kann gestoppt werden wenn SwyxIt! gekillt wurde
+            if (launchResult.SwyxItKilled && !SwyxItLauncher.IsRunning())
             {
-                Logging.Warn($"SwyxIt! Auto-Start fehlgeschlagen: {launchResult.Error}");
+                _windowHook.Dispose();
+                _windowHook = null;
+                Logging.Info("WindowHook gestoppt — kein SwyxIt!-Fenster mehr zu unterdrücken.");
             }
-            JsonRpcEmitter.EmitEvent("swyxItStatus", new {
-                running = SwyxItLauncher.IsRunning(),
-                tunnelAvailable = launchResult.TunnelAvailable,
-                processId = launchResult.ProcessId,
-                path = launchResult.SwyxItPath,
-                error = launchResult.Error
-            });
         }
-        else
+        else if (!string.IsNullOrEmpty(launchResult.Error))
         {
-            var tunnelUp = SwyxItLauncher.IsTunnelAvailable();
-            Logging.Info($"SwyxIt! bereits aktiv. Tunnel: {(tunnelUp ? "verfügbar" : "nicht verfügbar")}");
-            JsonRpcEmitter.EmitEvent("swyxItStatus", new {
-                running = true,
-                tunnelAvailable = tunnelUp,
-                alreadyRunning = true
-            });
+            Logging.Warn($"SwyxIt! Status: {launchResult.Error}");
+            // WindowHook bleibt aktiv falls SwyxIt! noch läuft (kein Tunnel)
         }
 
         // Step 3: COM + Handler initialisieren
@@ -149,7 +148,7 @@ static class Program
 
         // Status: disconnected bis "connect" explizit aufgerufen wird
         JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected" });
-        Logging.Info("SwyxBridge bereit (WindowHook aktiv, SwyxIt! als Tunnel-Provider).");
+        Logging.Info("SwyxBridge bereit" + (launchResult.TunnelAvailable ? " (Tunnel aktiv, SwyxIt! nicht mehr nötig)." : " (warte auf Tunnel)."));
     }
 
     private static void DispatchRequest(JsonRpcRequest req)

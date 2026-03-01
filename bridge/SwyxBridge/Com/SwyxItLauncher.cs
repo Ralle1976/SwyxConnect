@@ -5,18 +5,18 @@ using SwyxBridge.Utils;
 namespace SwyxBridge.Com;
 
 /// <summary>
-/// Startet SwyxIt!.exe automatisch als unsichtbaren Tunnel-Provider.
+/// Startet SwyxIt!.exe temporär zum Tunnel-Aufbau und killt es danach.
 ///
-/// Zweck: SwyxIt! baut den RemoteConnector-Tunnel auf (proprietäres Protokoll
-/// auf Port 15021), der CDS lokal auf 127.0.0.1:9094 verfügbar macht.
-/// Ohne SwyxIt! gibt es keinen Tunnel und damit keine Kontakte/Telefonie.
+/// ERKENNTNIS: CLMgr.exe hält den RemoteConnector-Tunnel eigenständig.
+/// SwyxIt!.exe wird nur benötigt, um den Tunnel initial aufzubauen.
+/// Danach kann SwyxIt! beendet werden — CLMgr läuft weiter, Port 9094 bleibt offen.
 ///
 /// Ablauf:
-///   1. Prüfe ob SwyxIt!.exe bereits läuft → wenn ja, fertig
-///   2. Finde SwyxIt!.exe im Installationsverzeichnis
+///   1. Prüfe ob Tunnel bereits steht (Port 9094) → wenn ja, fertig
+///   2. Prüfe ob SwyxIt!.exe bereits läuft → wenn ja, nur auf Tunnel warten
 ///   3. Starte SwyxIt!.exe mit WindowStyle=Hidden
-///   4. WindowHook unterdrückt alle Fenster sofort
-///   5. Warte auf Port 9094 (Tunnel aktiv) mit Timeout
+///   4. Warte auf Port 9094 (Tunnel aktiv) mit Timeout
+///   5. Kill SwyxIt!.exe — CLMgr hält den Tunnel
 ///   6. Melde Erfolg/Misserfolg zurück
 /// </summary>
 public static class SwyxItLauncher
@@ -42,6 +42,7 @@ public static class SwyxItLauncher
         public string? SwyxItPath { get; set; }
         public string? Error { get; set; }
         public int WaitTimeMs { get; set; }
+        public bool SwyxItKilled { get; set; }
     }
 
     /// <summary>
@@ -127,13 +128,36 @@ public static class SwyxItLauncher
     {
         var result = new LaunchResult();
 
-        // Schritt 1: Bereits am Laufen?
+        // Schritt 0: Tunnel bereits offen? (CLMgr läuft noch von vorher)
+        if (IsTunnelAvailable())
+        {
+            result.Success = true;
+            result.TunnelAvailable = true;
+            result.AlreadyRunning = IsRunning();
+            Logging.Info("SwyxItLauncher: Tunnel bereits verfügbar (Port 9094 offen). SwyxIt! nicht nötig.");
+            return result;
+        }
+
+        // Schritt 1: SwyxIt! bereits am Laufen? Nur auf Tunnel warten.
         if (IsRunning())
         {
             result.AlreadyRunning = true;
-            result.Success = true;
-            result.TunnelAvailable = IsTunnelAvailable();
-            Logging.Info($"SwyxItLauncher: SwyxIt! läuft bereits. Tunnel: {(result.TunnelAvailable ? "verfügbar" : "nicht verfügbar")}");
+            Logging.Info("SwyxItLauncher: SwyxIt! läuft bereits, warte auf Tunnel...");
+            result.TunnelAvailable = WaitForTunnel(tunnelTimeoutMs, out int waitMs);
+            result.WaitTimeMs = waitMs;
+            result.Success = result.TunnelAvailable;
+            if (result.TunnelAvailable)
+            {
+                // SwyxIt! killen — CLMgr hält den Tunnel
+                KillSwyxIt();
+                result.SwyxItKilled = true;
+                Logging.Info($"SwyxItLauncher: Tunnel offen nach {waitMs}ms. SwyxIt! gekillt — CLMgr hält Tunnel.");
+            }
+            else
+            {
+                result.Error = $"Tunnel nach {tunnelTimeoutMs}ms nicht verfügbar. SwyxIt! läuft, aber Port 9094 ist geschlossen.";
+                Logging.Warn($"SwyxItLauncher: {result.Error}");
+            }
             return result;
         }
 
@@ -146,7 +170,7 @@ public static class SwyxItLauncher
             return result;
         }
         result.SwyxItPath = swyxItPath;
-        Logging.Info($"SwyxItLauncher: Starte {swyxItPath} (versteckt)...");
+        Logging.Info($"SwyxItLauncher: Starte {swyxItPath} (temporär für Tunnel-Aufbau)...");
 
         // Schritt 3: SwyxIt!.exe starten (Hidden)
         try
@@ -156,7 +180,7 @@ public static class SwyxItLauncher
                 FileName = swyxItPath,
                 WindowStyle = ProcessWindowStyle.Hidden,
                 CreateNoWindow = true,
-                UseShellExecute = true, // nötig für WindowStyle
+                UseShellExecute = true,
             };
 
             var proc = Process.Start(psi);
@@ -178,30 +202,69 @@ public static class SwyxItLauncher
         }
 
         // Schritt 4: Auf Tunnel warten (Port 9094)
-        var sw = Stopwatch.StartNew();
-        int pollInterval = 500; // 500ms zwischen Checks
+        result.TunnelAvailable = WaitForTunnel(tunnelTimeoutMs, out int waited);
+        result.WaitTimeMs = waited;
 
-        while (sw.ElapsedMilliseconds < tunnelTimeoutMs)
+        if (result.TunnelAvailable)
+        {
+            result.Success = true;
+            // Schritt 5: SwyxIt! killen — CLMgr hält den Tunnel eigenständig
+            KillSwyxIt();
+            result.SwyxItKilled = true;
+            Logging.Info($"SwyxItLauncher: Tunnel offen nach {waited}ms. SwyxIt! gekillt — CLMgr hält Tunnel.");
+        }
+        else
+        {
+            // Timeout — SwyxIt! läuft, aber kein Tunnel. Nicht killen, User muss sich anmelden.
+            result.Error = $"Tunnel nach {tunnelTimeoutMs}ms nicht verfügbar. SwyxIt! läuft (PID {result.ProcessId}), aber Port 9094 ist geschlossen. Prüfe RemoteConnector-Konfiguration.";
+            Logging.Warn($"SwyxItLauncher: {result.Error}");
+            result.Success = IsRunning();
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Wartet auf Port 9094 (Tunnel) mit Polling.
+    /// </summary>
+    private static bool WaitForTunnel(int timeoutMs, out int elapsedMs)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int pollInterval = 500;
+
+        while (sw.ElapsedMilliseconds < timeoutMs)
         {
             if (IsTunnelAvailable())
             {
-                result.TunnelAvailable = true;
-                result.Success = true;
-                result.WaitTimeMs = (int)sw.ElapsedMilliseconds;
-                Logging.Info($"SwyxItLauncher: Tunnel verfügbar nach {result.WaitTimeMs}ms!");
-                return result;
+                elapsedMs = (int)sw.ElapsedMilliseconds;
+                return true;
             }
             Thread.Sleep(pollInterval);
         }
 
-        // Timeout — SwyxIt! läuft, aber Tunnel kam nicht hoch
-        result.WaitTimeMs = (int)sw.ElapsedMilliseconds;
-        result.Error = $"Tunnel nach {tunnelTimeoutMs}ms nicht verfügbar. SwyxIt! läuft (PID {result.ProcessId}), aber Port 9094 ist geschlossen. Prüfe RemoteConnector-Konfiguration.";
-        Logging.Warn($"SwyxItLauncher: {result.Error}");
+        elapsedMs = (int)sw.ElapsedMilliseconds;
+        return false;
+    }
 
-        // Trotzdem als "teilweise erfolgreich" markieren — SwyxIt! läuft, User kann sich manuell anmelden
-        result.Success = IsRunning();
-        return result;
+    /// <summary>
+    /// Killt SwyxIt!.exe sofort (Force-Kill, kein graceful close).
+    /// CLMgr.exe bleibt am Leben und hält den Tunnel.
+    /// </summary>
+    private static void KillSwyxIt()
+    {
+        try
+        {
+            foreach (var proc in Process.GetProcessesByName("SwyxIt!"))
+            {
+                Logging.Info($"SwyxItLauncher: Kill SwyxIt! (PID {proc.Id}) — CLMgr bleibt.");
+                proc.Kill();
+                proc.WaitForExit(3000);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"SwyxItLauncher: Kill fehlgeschlagen: {ex.Message}");
+        }
     }
 
     /// <summary>
