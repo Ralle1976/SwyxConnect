@@ -143,6 +143,7 @@ export interface AppSettings {
   audioOutputVolume: number;
   teamsEnabled: boolean;
   teamsTokens: TeamsTokens | null;
+  teamsIntegrationMode: TeamsIntegrationMode;
   windowBounds: WindowBounds | null;
   sidebarCollapsed: boolean;
   pluginsDirectory: string;
@@ -157,4 +158,30 @@ export interface TeamsTokens {
   expiresAt: number;
   userId: string;
   tenantId: string;
+}
+
+export type TeamsIntegrationMode = 'local' | 'graph' | 'off';
+
+export interface TeamsLocalAccount {
+  id: string;
+  email: string;
+  clientVersion: 'Legacy' | 'New2023' | 'Unknown';
+  isRunning: boolean;
+}
+
+export interface TeamsLocalStatus {
+  connected: boolean;
+  availability: string;
+  activity: string;
+  currentUser: string | null;
+  clientVersion: string | null;
+}
+
+export interface SwyxConnectionInfo {
+  connected: boolean;
+  serverName: string | null;
+  userName: string | null;
+  ownNumber: string | null;
+  version: string | null;
+  isRegistered: boolean;
 }

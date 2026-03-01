@@ -10,6 +10,7 @@ import type {
   ColleaguePresence,
   AppSettings,
   PresenceStatus,
+  SwyxConnectionInfo,
 } from '../shared/types'
 
 // ─── Exposed API ──────────────────────────────────────────────────────────────
@@ -73,6 +74,8 @@ const swyxApi = {
   setSettings: (patch: Partial<AppSettings>): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SET_SETTINGS, patch),
 
+  getConnectionInfo: (): Promise<SwyxConnectionInfo> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_CONNECTION_INFO),
   // --- Event Listener ---
   onLineStateChanged: (callback: (lines: LineInfo[]) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, lines: LineInfo[]): void => callback(lines)
@@ -103,6 +106,39 @@ const swyxApi = {
     const handler = (_event: Electron.IpcRendererEvent, data: { lineId: number }): void => callback(data)
     ipcRenderer.on(IPC_CHANNELS.CALL_ENDED, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.CALL_ENDED, handler)
+  },
+
+  // --- TeamsLocal ---
+  teamsLocalConnect: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_CONNECT),
+  teamsLocalDisconnect: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_DISCONNECT),
+  teamsLocalGetStatus: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_GET_STATUS),
+  teamsLocalGetAvailability: (): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_GET_AVAILABILITY),
+  teamsLocalSetAvailability: (availability: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_SET_AVAILABILITY, availability),
+  teamsLocalMakeCall: (phoneNumber: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_MAKE_CALL, phoneNumber),
+  teamsLocalGetAccounts: (): Promise<unknown[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_GET_ACCOUNTS),
+
+  // TeamsLocal event listeners
+  onTeamsLocalPresenceChanged: (callback: (status: unknown) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: unknown): void => callback(status)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_LOCAL_PRESENCE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_LOCAL_PRESENCE_CHANGED, handler)
+  },
+  onTeamsLocalStateChanged: (callback: (status: unknown) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: unknown): void => callback(status)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_LOCAL_STATE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_LOCAL_STATE_CHANGED, handler)
+  },
+  onTeamsLocalIncomingCall: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_LOCAL_INCOMING_CALL, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_LOCAL_INCOMING_CALL, handler)
   },
 } as const
 

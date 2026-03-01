@@ -13,3 +13,5 @@ export interface TeamsSyncStatus {
   lastSync: number | null;
   error: string | null;
 }
+
+export type { TeamsLocalStatus, TeamsLocalAccount, TeamsIntegrationMode } from '../../shared/types';

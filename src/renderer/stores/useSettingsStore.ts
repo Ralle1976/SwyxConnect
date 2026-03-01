@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AppSettings } from '../types/swyx';
+import { AppSettings, TeamsIntegrationMode } from '../types/swyx';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -15,7 +15,8 @@ interface SettingsStoreState {
   audioInputVolume: number;
   audioOutputVolume: number;
   teamsEnabled: boolean;
-  numberOfLines: number;
+  teamsEnabled: boolean;
+  teamsIntegrationMode: TeamsIntegrationMode;
   // Actions
   setTheme: (theme: Theme) => void;
   toggleSidebar: () => void;
@@ -28,6 +29,7 @@ interface SettingsStoreState {
   setAudioOutputVolume: (volume: number) => void;
   setTeamsEnabled: (enabled: boolean) => void;
   setNumberOfLines: (count: number) => void;
+  setTeamsIntegrationMode: (mode: TeamsIntegrationMode) => void;
   // Sync mit Main Process
   loadFromMain: () => Promise<void>;
   saveToMain: (patch: Partial<AppSettings>) => Promise<void>;
@@ -46,6 +48,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
       audioOutputVolume: 80,
       teamsEnabled: false,
       numberOfLines: 2,
+      teamsIntegrationMode: 'off' as TeamsIntegrationMode,
 
       setTheme: (theme) => {
         set({ theme });
@@ -96,6 +99,10 @@ export const useSettingsStore = create<SettingsStoreState>()(
           window.swyxApi.setNumberOfLines(count).catch(() => {});
         }
       },
+      setTeamsIntegrationMode: (mode) => {
+        set({ teamsIntegrationMode: mode });
+        get().saveToMain({ teamsIntegrationMode: mode });
+      },
 
       loadFromMain: async () => {
         if (!window.swyxApi) return;
@@ -113,6 +120,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
               audioOutputVolume: settings.audioOutputVolume ?? 80,
               teamsEnabled: settings.teamsEnabled ?? false,
               numberOfLines: ((settings as Record<string, unknown>).numberOfLines as number | undefined) ?? 2,
+              teamsIntegrationMode: settings.teamsIntegrationMode ?? 'off',
             });
           }
         } catch { /* Bridge noch nicht bereit */ }
@@ -138,6 +146,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
         audioOutputVolume: state.audioOutputVolume,
         teamsEnabled: state.teamsEnabled,
         numberOfLines: state.numberOfLines,
+        teamsIntegrationMode: state.teamsIntegrationMode,
       }),
     }
   )

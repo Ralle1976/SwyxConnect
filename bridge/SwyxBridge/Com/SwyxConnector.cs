@@ -81,7 +81,8 @@ public sealed class SwyxConnector : IDisposable
         var existing = Process.GetProcessesByName(SwyxItExeName);
         if (existing.Length > 0)
         {
-            Logging.Info($"SwyxConnector: SwyxIt! l\u00e4uft bereits (PID={existing[0].Id}).");
+            Logging.Info($"SwyxConnector: SwyxIt! läuft bereits (PID={existing[0].Id}). Verstecke Fenster...");
+            HideSwyxItWindows();
             return;
         }
 
@@ -99,7 +100,7 @@ public sealed class SwyxConnector : IDisposable
             var psi = new ProcessStartInfo
             {
                 FileName = SwyxItExePath,
-                WindowStyle = ProcessWindowStyle.Minimized,
+                WindowStyle = ProcessWindowStyle.Hidden,
                 UseShellExecute = true
             };
             Process.Start(psi);
@@ -110,13 +111,18 @@ public sealed class SwyxConnector : IDisposable
             bool ready = false;
             while (sw.Elapsed.TotalSeconds < MaxWaitForSwyxItSec)
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(500);
+                HideSwyxItWindows(); // Aggressiv: während Wartezeit schon verstecken
                 var clmgr = Process.GetProcessesByName("CLMgr");
                 if (clmgr.Length > 0)
                 {
-                    // CLMgr l\u00e4uft \u2014 noch 3s warten f\u00fcr COM-Registrierung
                     Logging.Info($"SwyxConnector: CLMgr erkannt (PID={clmgr[0].Id}), warte 3s auf COM...");
-                    Thread.Sleep(3000);
+                    // Während der 3s COM-Wartezeit weiter unterdrücken
+                    for (int i = 0; i < 6; i++)
+                    {
+                        Thread.Sleep(500);
+                        HideSwyxItWindows();
+                    }
                     ready = true;
                     break;
                 }
@@ -126,8 +132,8 @@ public sealed class SwyxConnector : IDisposable
             if (!ready)
                 Logging.Warn($"SwyxConnector: CLMgr nach {MaxWaitForSwyxItSec}s nicht gefunden. Versuche trotzdem...");
 
-            // SwyxIt!-Fenster minimieren/verstecken
-            MinimizeSwyxItWindows();
+            // Finales Verstecken
+            HideSwyxItWindows();
         }
         catch (Exception ex)
         {
@@ -136,13 +142,13 @@ public sealed class SwyxConnector : IDisposable
     }
 
     /// <summary>
-    /// Minimiert alle SwyxIt!-Fenster nach dem Start.
+    /// Versteckt ALLE SwyxIt!-Fenster komplett (SW_HIDE).
     /// </summary>
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    private const int SW_SHOWMINNOACTIVE = 7;
+    private const int SW_HIDE = 0;
 
-    private static void MinimizeSwyxItWindows()
+    private static void HideSwyxItWindows()
     {
         try
         {
@@ -150,14 +156,14 @@ public sealed class SwyxConnector : IDisposable
             {
                 if (proc.MainWindowHandle != IntPtr.Zero)
                 {
-                    ShowWindow(proc.MainWindowHandle, SW_SHOWMINNOACTIVE);
-                    Logging.Info($"SwyxConnector: SwyxIt!-Fenster minimiert (PID={proc.Id}).");
+                    ShowWindow(proc.MainWindowHandle, SW_HIDE);
+                    Logging.Info($"SwyxConnector: SwyxIt!-Fenster versteckt (PID={proc.Id}).");
                 }
             }
         }
         catch (Exception ex)
         {
-            Logging.Warn($"SwyxConnector: Fenster minimieren fehlgeschlagen: {ex.Message}");
+            Logging.Warn($"SwyxConnector: Fenster verstecken fehlgeschlagen: {ex.Message}");
         }
     }
 

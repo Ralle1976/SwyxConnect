@@ -19,6 +19,9 @@ export type {
   AppSettings,
   TeamsTokens,
   WindowBounds,
+  TeamsIntegrationMode,
+  TeamsLocalStatus,
+  TeamsLocalAccount,
 } from '../../shared/types';
 
 import type { SwyxApi, WindowControls } from '../../preload/index';

@@ -27,6 +27,7 @@ export const IPC_CHANNELS = {
   MUTE: 'swyx:mute',
   UNMUTE: 'swyx:unmute',
   SET_NUMBER_OF_LINES: 'swyx:setNumberOfLines',
+  GET_CONNECTION_INFO: 'swyx:getConnectionInfo',
   // Event channels (main → renderer)
   LINE_STATE_CHANGED: 'swyx:lineStateChanged',
   BRIDGE_STATE_CHANGED: 'swyx:bridgeStateChanged',
@@ -34,6 +35,19 @@ export const IPC_CHANNELS = {
   PRESENCE_CHANGED: 'swyx:presenceChanged',
   CALL_ENDED: 'swyx:callEnded',
   HEARTBEAT: 'swyx:heartbeat',
+  // TeamsLocal channels
+  TEAMS_LOCAL_CONNECT: 'swyx:teamsLocal:connect',
+  TEAMS_LOCAL_DISCONNECT: 'swyx:teamsLocal:disconnect',
+  TEAMS_LOCAL_GET_STATUS: 'swyx:teamsLocal:getStatus',
+  TEAMS_LOCAL_GET_AVAILABILITY: 'swyx:teamsLocal:getAvailability',
+  TEAMS_LOCAL_SET_AVAILABILITY: 'swyx:teamsLocal:setAvailability',
+  TEAMS_LOCAL_MAKE_CALL: 'swyx:teamsLocal:makeCall',
+  TEAMS_LOCAL_GET_ACCOUNTS: 'swyx:teamsLocal:getAccounts',
+  // TeamsLocal events (main → renderer)
+  TEAMS_LOCAL_PRESENCE_CHANGED: 'swyx:teamsLocal:presenceChanged',
+  TEAMS_LOCAL_INCOMING_CALL: 'swyx:teamsLocal:incomingCall',
+  TEAMS_LOCAL_STATE_CHANGED: 'swyx:teamsLocal:stateChanged',
+  TEAMS_LOCAL_ERROR: 'swyx:teamsLocal:error',
 } as const;
 
 export type IpcChannelKey = keyof typeof IPC_CHANNELS;

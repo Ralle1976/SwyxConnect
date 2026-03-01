@@ -27,6 +27,7 @@ static class Program
     private static ContactHandler? _contactHandler;
     private static HistoryHandler? _historyHandler;
     private static VoicemailHandler? _voicemailHandler;
+    private static TeamsLocalHandler? _teamsLocalHandler;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
     private static System.Windows.Forms.Timer? _windowSuppressor;
@@ -120,6 +121,7 @@ static class Program
         _contactHandler = new ContactHandler(_connector);
         _historyHandler = new HistoryHandler(_connector);
         _voicemailHandler = new VoicemailHandler(_connector);
+        _teamsLocalHandler = new TeamsLocalHandler();
 
         // JSON-RPC Server auf Background-Thread starten
         _rpcServer = new JsonRpcServer(sta, DispatchRequest);
@@ -170,6 +172,10 @@ static class Program
         else if (_voicemailHandler?.CanHandle(req.Method) == true)
         {
             _voicemailHandler.Handle(req);
+        }
+        else if (_teamsLocalHandler?.CanHandle(req.Method) == true)
+        {
+            _teamsLocalHandler.Handle(req);
         }
         else
         {

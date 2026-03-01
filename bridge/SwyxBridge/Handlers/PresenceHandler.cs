@@ -34,7 +34,7 @@ public sealed class PresenceHandler
 
     public bool CanHandle(string method) => method switch
     {
-        "getPresence" or "setPresence" or "getColleaguePresence" => true,
+        "getPresence" or "setPresence" or "getColleaguePresence" or "getConnectionInfo" => true,
         _ => false
     };
 
@@ -47,6 +47,7 @@ public sealed class PresenceHandler
                 "getPresence" => GetOwnPresence(),
                 "setPresence" => SetOwnPresence(req.Params),
                 "getColleaguePresence" => GetColleaguePresence(),
+                "getConnectionInfo" => GetConnectionInfo(),
                 _ => null
             };
 
@@ -540,4 +541,58 @@ public sealed class PresenceHandler
         4 => "Busy",
         _ => "Offline"
     };
+
+    // ─── CONNECTION INFO ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Liest Verbindungsinformationen vom CLMgr COM-Objekt.
+    /// Zeigt Server, Benutzer, Nebenstelle und Version an.
+    /// </summary>
+    private object GetConnectionInfo()
+    {
+        var com = _connector.GetCom();
+        if (com == null)
+            return new
+            {
+                connected = false,
+                serverName = (string?)null,
+                userName = (string?)null,
+                ownNumber = (string?)null,
+                version = (string?)null,
+                isRegistered = false
+            };
+
+        string? serverName = null;
+        string? userName = null;
+        string? ownNumber = null;
+        string? version = null;
+        bool isRegistered = false;
+
+        try { serverName = (string?)com.DispServerName; }
+        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispServerName: {ex.Message}"); }
+
+        try { userName = (string?)com.DispUserName; }
+        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispUserName: {ex.Message}"); }
+
+        try { ownNumber = (string?)com.DispOwnNumber; }
+        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispOwnNumber: {ex.Message}"); }
+
+        try { version = (string?)com.DispVersion; }
+        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispVersion: {ex.Message}"); }
+
+        try { isRegistered = (bool)com.DispIsRegistered; }
+        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispIsRegistered: {ex.Message}"); }
+
+        Logging.Info($"PresenceHandler: GetConnectionInfo → Server={serverName}, User={userName}, Nr={ownNumber}, Ver={version}, Reg={isRegistered}");
+
+        return new
+        {
+            connected = true,
+            serverName,
+            userName,
+            ownNumber,
+            version,
+            isRegistered
+        };
+    }
 }

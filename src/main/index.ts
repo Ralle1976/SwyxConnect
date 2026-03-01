@@ -3,15 +3,18 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { BridgeManager } from './bridge/BridgeManager'
 import { TrayIcon } from './tray'
-import { registerIpcHandlers } from './ipc/handlers'
+import { registerIpcHandlers, registerTeamsLocalIpcHandlers } from './ipc/handlers'
 import { SettingsStore } from './services/SettingsStore'
 import { NotificationService } from './services/NotificationService'
 import { BridgeState, CallDetails, LineState } from '../shared/types'
+import { IPC_CHANNELS } from '../shared/constants'
+import { TeamsLocalService } from './services/TeamsLocalService'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 const bridgeManager = new BridgeManager()
 const settingsStore = new SettingsStore()
+const teamsLocalService = new TeamsLocalService(bridgeManager)
 let trayIcon: TrayIcon | null = null
 
 function getMainWindow(): BrowserWindow | null {
@@ -96,12 +99,14 @@ function createMainWindow(): BrowserWindow {
 app.on('before-quit', () => {
   isQuitting = true
   bridgeManager.stop()
+  teamsLocalService.stop()
   settingsStore.flush()
 })
 
 // Register IPC handlers early (before whenReady) so they are available
 // as soon as the renderer makes its first invoke calls.
 registerIpcHandlers(bridgeManager, settingsStore, getMainWindow)
+registerTeamsLocalIpcHandlers(teamsLocalService, getMainWindow)
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.ralle197.swyit')
@@ -133,6 +138,13 @@ app.whenReady().then(() => {
           (params['callerNumber'] as string) ?? ''
         )
       }
+    }
+
+    if (evt.method === 'teamsLocalPresenceChanged') {
+      mainWindow?.webContents.send(IPC_CHANNELS.TEAMS_LOCAL_PRESENCE_CHANGED, evt.params)
+    }
+    if (evt.method === 'teamsLocalIncomingCall') {
+      mainWindow?.webContents.send(IPC_CHANNELS.TEAMS_LOCAL_INCOMING_CALL, evt.params)
     }
   })
 

@@ -11,6 +11,7 @@ import {
   AppSettings,
   PresenceStatus,
 } from '../../shared/types';
+import { TeamsLocalService } from '../services/TeamsLocalService';
 import { BridgeManager } from '../bridge/BridgeManager';
 import { SettingsStore } from '../services/SettingsStore';
 
@@ -104,6 +105,10 @@ export function registerIpcHandlers(
     return bridgeManager.sendRequest('setNumberOfLines', { count });
   });
 
+  ipcMain.handle(IPC_CHANNELS.GET_CONNECTION_INFO, async () => {
+    return bridgeManager.sendRequest('getConnectionInfo');
+  });
+
   ipcMain.handle(IPC_CHANNELS.MUTE, async (_event, lineId: number) => {
     return bridgeManager.sendRequest('mute', { lineId });
   });
@@ -166,5 +171,40 @@ export function registerIpcHandlers(
       default:
         break;
     }
+  });
+}
+
+export function registerTeamsLocalIpcHandlers(
+  teamsLocalService: TeamsLocalService,
+  getMainWindow: () => BrowserWindow | null
+): void {
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_CONNECT, async () => {
+    return teamsLocalService.connect();
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_DISCONNECT, async () => {
+    return teamsLocalService.disconnect();
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_GET_STATUS, async () => {
+    return teamsLocalService.getStatus();
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_GET_AVAILABILITY, async () => {
+    return teamsLocalService.getAvailability();
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_SET_AVAILABILITY, async (_event, availability: string) => {
+    return teamsLocalService.setAvailability(availability);
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_MAKE_CALL, async (_event, phoneNumber: string) => {
+    return teamsLocalService.makeCall(phoneNumber);
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_GET_ACCOUNTS, async () => {
+    return teamsLocalService.getAccounts();
+  });
+
+  // Forward TeamsLocal events to renderer
+  teamsLocalService.on('presenceChanged', (status) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_LOCAL_PRESENCE_CHANGED, status);
+  });
+  teamsLocalService.on('stateChanged', (status) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_LOCAL_STATE_CHANGED, status);
   });
 }

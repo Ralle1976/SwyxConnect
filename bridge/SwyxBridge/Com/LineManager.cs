@@ -115,30 +115,32 @@ public sealed class LineManager
     // --- Periodische Fensterunterdrückung ---
 
     /// <summary>
-    /// Wird per Timer aufgerufen. Prüft ob SwyxIt!-Fenster im Vordergrund
-    /// ist und minimiert es automatisch.
+    /// Wird per Timer aufgerufen. Minimiert ALLE sichtbaren SwyxIt!-Fenster,
+    /// nicht nur das Vordergrund-Fenster.
     /// </summary>
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
     public void SuppressSwyxWindowPeriodic()
     {
         try
         {
-            var fg = GetForegroundWindow();
-            if (fg == IntPtr.Zero) return;
-
-            GetWindowThreadProcessId(fg, out uint processId);
-            if (processId == 0) return;
-
-            try
+            foreach (var proc in Process.GetProcesses())
             {
-                var proc = Process.GetProcessById((int)processId);
-                var name = proc.ProcessName.ToLowerInvariant();
-                if (name.Contains("swyxit") || name == "swyxitc")
+                try
                 {
-                    ShowWindow(fg, SW_SHOWMINNOACTIVE);
-                    Logging.Info($"LineManager: SwyxIt!-Fenster unterdrückt (Timer, PID={processId})");
+                    var name = proc.ProcessName.ToLowerInvariant();
+                    if ((name.Contains("swyxit") || name == "swyxitc") && proc.MainWindowHandle != IntPtr.Zero)
+                    {
+                        if (IsWindowVisible(proc.MainWindowHandle))
+                        {
+                            ShowWindow(proc.MainWindowHandle, SW_HIDE);
+                            Logging.Info($"LineManager: SwyxIt!-Fenster versteckt (Timer, PID={proc.Id})");
+                        }
+                    }
                 }
+                catch { /* Ignore */ }
             }
-            catch { /* Prozess nicht mehr verfügbar */ }
         }
         catch { /* Ignore */ }
     }
