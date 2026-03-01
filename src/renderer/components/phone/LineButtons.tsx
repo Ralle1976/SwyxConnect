@@ -17,6 +17,16 @@ const stateLabelMap: Record<LineState | string, string> = {
   Busy: 'Besetzt',
   Inactive: 'Frei',
   Terminated: 'Beendet',
+  Disabled: 'Deaktiviert',
+  HookOffInternal: 'Intern',
+  HookOffExternal: 'Extern',
+  Dialing: 'W\u00e4hlt',
+  Alerting: 'Rufton',
+  Knocking: 'Anklopfen',
+  ConferenceActive: 'Konferenz',
+  ConferenceOnHold: 'Konferenz (gehalten)',
+  Transferring: 'Weiterleitung',
+  DirectCall: 'Direktruf',
 }
 
 const selectedRing =

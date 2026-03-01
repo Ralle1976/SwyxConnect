@@ -7,7 +7,7 @@
 
 ## Projekt-Überblick
 
-**SwyxConnect** ist ein moderner Electron-basierter Desktop-Softphone-Client, der SwyxIt! als primäre Benutzeroberfläche für Swyx/Enreach-Telefonie ersetzt. Die Anwendung nutzt das **Swyx Client SDK** (`Swyx.Client.ClmgrAPI` v14.21.0 NuGet) für typisierte COM-Interop über eine C#-Bridge.
+**SwyxConnect** ist ein moderner Electron-basierter Desktop-Softphone-Client, der SwyxIt! als primäre Benutzeroberfläche für Swyx/Enreach-Telefonie ersetzt. SwyxIt! läuft dabei **unsichtbar im Hintergrund** als Tunnel-Provider (WindowHook unterdrückt alle Fenster). Die Anwendung nutzt das **Swyx Client SDK** (`Swyx.Client.ClmgrAPI` v14.21.0 NuGet) für typisierte COM-Interop über eine C#-Bridge im Attach-Modus.
 
 - **Repo**: https://github.com/Ralle1976/SwyxConnect
 - **Wiki**: https://github.com/Ralle1976/SwyxConnect/wiki
@@ -27,20 +27,19 @@
 │  │ (IPC Hub) │  │ (ctx)    │  │ Tailwind v4  │ │
 │  └─────┬─────┘  └──────────┘  └──────────────┘ │
 │        │ stdin/stdout (JSON-RPC 2.0)            │
-│  ┌─────▼─────────────────────────────────┐      │
-│  │  C# Bridge (SwyxBridge.exe)           │      │
-│  │  .NET 8 | [STAThread] | WinForms Pump │      │
-│  │  Swyx.Client.ClmgrAPI v14.21.0 (SDK)  │      │
-│  │  Hybrid COM: ProgID + typed SDK cast   │      │
-│  └───────────────────────────────────────┘      │
+│  ┌─────▼─────────────────────────────────────┐  │
+│  │  SwyxBridge.exe (.NET 8, x86)             │  │
+│  │  WindowHook: SwyxIt!-Fenster versteckt    │  │
+│  │  SwyxItLauncher: Auto-Start hidden         │  │
+│  │  COM Attach → CLMgr → SwyxIt! (hidden)    │  │
+│  └─────────────────────────────────────────┘  │
+│        │ COM Interop (Attach-Modus)            │
+│  ┌─────▼─────────────────────────────────────┐  │
+│  │  SwyxIt!.exe (VERSTECKT, kein UI)         │  │
+│  │  CLMgr.exe (COM-Server)                   │  │
+│  │  RemoteConnector-Tunnel → Swyx Server     │  │
+│  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
-         │
-         ▼
-  ┌──────────────────┐
-  │  Swyx COM Server │  CLMgr (COM-Server, CLSID {f8e552f8-...})
-  │  via SDK typed   │  Standalone-Modus: DispInit(serverName)
-  │  interfaces      │  Attach-Modus: SwyxIt!.exe als COM-Host
-  └──────────────────┘
 ```
 
 ### IPC-Protokoll
@@ -77,7 +76,7 @@
 
 - **Nur Windows x86 (32-Bit)** — kein x64, kein ARM64, kein macOS, kein Linux (CLMgr COM ist 32-Bit)
 - **Swyx Client SDK v14.21.0** — NuGet-Paket `Swyx.Client.ClmgrAPI`
-- **Standalone oder Attach**: SDK verbindet sich direkt zum Server via `DispInit()` oder nutzt laufende SwyxIt!-Session
+- **Nur Attach-Modus**: SwyxIt!.exe läuft versteckt im Hintergrund (DispInit = E_NOTIMPL)
 ---
 
 ## Technische Entscheidungen (VERBINDLICH)
@@ -94,6 +93,9 @@ DECISION: Standalone-Architektur = SIP-UA (SIPSorcery) + CDS WCF Client + eigene
 DECISION: CDS-Verbindung = WCF net.tcp auf Port 9094, Login via ConfigDataStore/CLoginImpl.none
 DECISION: Auth-Modus = JWT (JasonWebToken) nach AcquireToken mit Username/Password
 ```
+DECISION: DispInit = E_NOTIMPL — Standalone-COM nicht möglich, nur Attach-Modus
+DECISION: SwyxIt! = versteckter Tunnel-Provider (WindowHook + SwyxItLauncher)
+DECISION: Deployment = Komplettpaket in dist/SwyxConnect/ zum Kopieren
 
 ### MUST
 
@@ -107,6 +109,14 @@ DECISION: Auth-Modus = JWT (JasonWebToken) nach AcquireToken mit Username/Passwo
 - COM-Objekte auf Background-Threads erstellen
 - `as any`, `@ts-ignore`, `@ts-expect-error` in TypeScript
 - Secrets in Code oder Commits
+
+### KRITISCHE ERKENNTNIS: DispInit = E_NOTIMPL
+
+`DispInit("serverName")` gibt `E_NOTIMPL (0x80004001)` zurück. Der Standalone-Modus des CLMgr COM-Objekts ist NICHT implementiert. COM-Zugriff funktioniert NUR im Attach-Modus, wenn SwyxIt!.exe als COM-Host läuft.
+
+**Konsequenz**: SwyxIt!.exe MUSS laufen (wird automatisch versteckt gestartet). Der RemoteConnector-Tunnel auf Port 15021 ist ein proprietäres Binärprotokoll — nur SwyxIt!/CLMgr kann ihn aufbauen.
+
+**Option 2 (parallel)**: Decompilierung von `IpPbx.Client.Plugin.ComSocket.dll` (.NET Assembly) könnte den Tunnel-Client offenlegen und SwyxIt! langfristig ersetzen.
 
 ---
 
@@ -224,9 +234,11 @@ SwyIt-byRalle1976/
 │   │   ├── SwyxBridge.csproj     # Swyx.Client.ClmgrAPI v14.21.0 NuGet
 │   │   ├── Program.cs            # Entry: [STAThread] + Message-Pump + connect/disconnect dispatch
 │   │   ├── Com/
-│   │   │   ├── SwyxConnector.cs  # Hybrid COM: ProgID + typed SDK cast + DispInit standalone
+│   │   │   ├── SwyxConnector.cs  # COM Attach-Modus (DispInit = E_NOTIMPL)
 │   │   │   ├── LineManager.cs    # Multi-Line: Dial, Hangup, GetAllLines (IClientLineDisp)
 │   │   │   └── EventSink.cs     # Typed PubOnLineMgrNotification → JSON-RPC
+│   │   │   ├── WindowHook.cs     # SwyxIt!-Fenster dreistufig verstecken (Hook + Timer + Dialog-Killer)
+│   │   │   └── SwyxItLauncher.cs # SwyxIt! automatisch hidden starten, Tunnel-Port abwarten
 │   │   ├── Handlers/
 │   │   │   ├── CallHandler.cs    # JSON-RPC → LineManager Routing
 │   │   │   ├── PresenceHandler.cs # Away/DND/Available via dynamic DispClientConfig
@@ -283,11 +295,20 @@ SwyIt-byRalle1976/
 │   └── bridge/                   # Deployed SwyxBridge.exe + DLLs
 │
 ├── scripts/
-│   └── test-bridge.mjs           # Node.js Test-Script (spawnt Bridge via PowerShell)
+│   ├── test-bridge.mjs           # Node.js Test-Script (spawnt Bridge via PowerShell)
+│   └── test-dispinit.mjs         # DispInit Standalone-Test (bewiesener E_NOTIMPL)
 │
 ├── resources/                    # App-Icons
 ├── plugins/                      # Plugin-Verzeichnis (Erweiterbarkeit)
 └── tests/
+│
+├── dist/
+│   └── SwyxConnect/              # Fertiges Deployment-Paket
+│       ├── SwyxConnect.bat       # Starter-Script
+│       ├── LIESMICH.txt          # Anleitung
+│       ├── app/                  # Electron-App (main, preload, renderer)
+│       ├── bridge/               # SwyxBridge.exe + DLLs
+│       └── resources/            # Icons
 ```
 
 ---
@@ -440,6 +461,11 @@ COM feuert PubOnLineMgrNotification(msg=0..3)
 - **Kontakte**: DispSearchPhoneBookEntries("") lädt alle
 - **Leitungsanzahl**: IPC-Kette Settings → Bridge → DispSetNumberOfLines(n)
 - **Audio-Test**: 440Hz Sinuston + Mikrofon-Pegel-Meter
+- **SwyxItLauncher**: Auto-Start von SwyxIt!.exe hidden, Port-9094-Polling
+- **Deployment-Paket**: dist/SwyxConnect/ mit Starter und Anleitung
+- **Version 1.0.0**: Alle Mock-Daten entfernt, 15 deutsche Leitungsstatus-Labels
+- **Teams-Präsenz**: Bidirektional via MS Graph API (Azure AD, Device Code Flow)
+- **Einstellungen**: Vollständige Persistenz (Settings → IPC → Disk)
 
 ### SwyxIt!-Fensterunterdrückung ✅
 
@@ -458,10 +484,9 @@ Dreistufige Eliminierung aller SwyxIt!-Fenster über `WindowHook.cs`:
 
 ### Geplant 📋
 
-- Microsoft Teams V2 WebSocket Präsenz-Sync (bidirektional)
+- ComSocket.dll Decompilierung → Tunnel-Client ohne SwyxIt!
 - electron-builder Packaging (.exe Installer)
 - Plugin-System (Erweiterbarkeit)
-- macOS-Support (via REST/Remote Bridge — Server-Ports aktuell blockiert)
 ---
 
 ## Umgebung

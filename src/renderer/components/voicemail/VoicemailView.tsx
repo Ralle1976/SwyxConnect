@@ -15,10 +15,8 @@ export default function VoicemailView(): React.JSX.Element {
   }, [fetchVoicemails]);
 
   function handlePlay(id: string): void {
-    // Mark as read when played
     markRead(id);
-    // Playback would be handled by the main process via IPC in a full implementation
-    console.log('[VoicemailView] Play voicemail:', id);
+    // Audio-Wiedergabe erfolgt über den Swyx-Client (SDK-Limitation: kein Audio-Streaming über COM)
   }
 
   function handleCallback(number: string): void {

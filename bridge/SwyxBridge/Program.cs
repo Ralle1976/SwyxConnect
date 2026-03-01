@@ -32,6 +32,7 @@ static class Program
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
     private static StandaloneKestrelHost? _kestrelHost;
+    private static WindowHook? _windowHook;
 
     private static CdsPhonebookClient? _cdsPhonebookClient;
     private static string? _cdsAccessToken;
@@ -88,12 +89,52 @@ static class Program
         _rpcServer?.Stop();
         EventSink.Unsubscribe();
         _connector?.Dispose();
+        _windowHook?.Dispose();
         _kestrelHost?.Dispose();
     }
 
     private static void InitializeBridge(StaDispatcher sta)
     {
-        // Manual Connect Mode — COM wird NICHT automatisch gestartet
+        // Step 1: WindowHook starten — unterdrückt SwyxIt!-Fenster SOFORT
+        _windowHook = new WindowHook();
+        _windowHook.Start();
+
+        // Step 2: SwyxIt! als Tunnel-Provider starten (falls nicht bereits aktiv)
+        if (!SwyxItLauncher.IsRunning())
+        {
+            Logging.Info("SwyxIt! nicht aktiv — starte als unsichtbaren Tunnel-Provider...");
+            var launchResult = SwyxItLauncher.Launch(tunnelTimeoutMs: 30000);
+            if (launchResult.Success)
+            {
+                if (launchResult.TunnelAvailable)
+                    Logging.Info($"SwyxIt! gestartet (PID {launchResult.ProcessId}), Tunnel verfügbar nach {launchResult.WaitTimeMs}ms.");
+                else
+                    Logging.Warn($"SwyxIt! gestartet (PID {launchResult.ProcessId}), aber Tunnel noch nicht verfügbar. Manuelles Anmelden in SwyxIt! erforderlich.");
+            }
+            else
+            {
+                Logging.Warn($"SwyxIt! Auto-Start fehlgeschlagen: {launchResult.Error}");
+            }
+            JsonRpcEmitter.EmitEvent("swyxItStatus", new {
+                running = SwyxItLauncher.IsRunning(),
+                tunnelAvailable = launchResult.TunnelAvailable,
+                processId = launchResult.ProcessId,
+                path = launchResult.SwyxItPath,
+                error = launchResult.Error
+            });
+        }
+        else
+        {
+            var tunnelUp = SwyxItLauncher.IsTunnelAvailable();
+            Logging.Info($"SwyxIt! bereits aktiv. Tunnel: {(tunnelUp ? "verfügbar" : "nicht verfügbar")}");
+            JsonRpcEmitter.EmitEvent("swyxItStatus", new {
+                running = true,
+                tunnelAvailable = tunnelUp,
+                alreadyRunning = true
+            });
+        }
+
+        // Step 3: COM + Handler initialisieren
         _connector = new SwyxConnector();
         _lineManager = new LineManager(_connector);
         _callHandler = new CallHandler(_lineManager);
@@ -108,11 +149,45 @@ static class Program
 
         // Status: disconnected bis "connect" explizit aufgerufen wird
         JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected" });
-        Logging.Info("SwyxBridge bereit (manual connect mode + standalone probes).");
+        Logging.Info("SwyxBridge bereit (WindowHook aktiv, SwyxIt! als Tunnel-Provider).");
     }
 
     private static void DispatchRequest(JsonRpcRequest req)
     {
+        // --- SwyxIt! Tunnel-Provider Status ---
+        if (req.Method == "getSwyxItStatus")
+        {
+            var stats = _windowHook?.GetStats() ?? (0, 0, 0);
+            if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new
+            {
+                running = SwyxItLauncher.IsRunning(),
+                tunnelAvailable = SwyxItLauncher.IsTunnelAvailable(),
+                windowsNuked = stats.WindowsNuked,
+                dialogsKilled = stats.DialogsKilled,
+                swyxPids = stats.SwyxPids,
+                path = SwyxItLauncher.FindSwyxItPath()
+            });
+            return;
+        }
+        if (req.Method == "restartSwyxIt")
+        {
+            try
+            {
+                SwyxItLauncher.Stop();
+                Thread.Sleep(2000);
+                var result = SwyxItLauncher.Launch();
+                if (req.Id.HasValue) JsonRpcEmitter.EmitResponse(req.Id.Value, new
+                {
+                    success = result.Success,
+                    tunnelAvailable = result.TunnelAvailable,
+                    processId = result.ProcessId,
+                    error = result.Error
+                });
+            }
+            catch (Exception ex) { if (req.Id.HasValue) JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.InternalError, ex.Message); }
+            return;
+        }
+
         // --- Connection Management ---
         if (req.Method == "connect")
         {

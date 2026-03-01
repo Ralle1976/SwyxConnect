@@ -97,7 +97,7 @@ export default function VoicemailEntry({
         <button
           type="button"
           onClick={() => onPlay(message.id)}
-          title="Abspielen"
+          title="Als gelesen markieren"
           className="flex items-center justify-center w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-zinc-600 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
         >
           <Play className="w-3.5 h-3.5" />
