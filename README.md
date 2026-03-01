@@ -2,7 +2,7 @@
 
 **Moderner Desktop-Softphone-Client für Swyx/Enreach — Version 1.0.0**
 
-SwyxConnect ersetzt die SwyxIt!-Oberfläche vollständig. SwyxIt! läuft dabei unsichtbar im Hintergrund und stellt die Serververbindung her — der Benutzer sieht nur SwyxConnect. Die Anwendung bietet eine intuitive, reaktive Oberfläche für Telefonie, Präsenzverwaltung und Callcenter-Funktionen.
+SwyxConnect ersetzt die SwyxIt!-Oberfläche vollständig durch eine moderne, reaktive Anwendung. SwyxIt! wird dabei automatisch im Hintergrund gestartet, baut die Serververbindung auf und wird anschließend wieder beendet — der Benutzer sieht nur SwyxConnect.
 
 ---
 
@@ -12,11 +12,10 @@ SwyxConnect ersetzt die SwyxIt!-Oberfläche vollständig. SwyxIt! läuft dabei u
 - Anrufen, Annehmen, Auflegen über visuelles Dialpad
 - Halten, Weiterleiten und Makeln
 - DTMF-Tastentöne während des Gesprächs
-- 4 Leitungen mit Echtzeit-Statusanzeige
+- Bis zu 8 konfigurierbare Leitungen mit Echtzeit-Statusanzeige
 - Eingehende Anrufe mit Popup-Banner
 - Tastaturkürzel: F5 Annehmen, F6 Auflegen, F7 Halten, F8 Stumm, Esc Beenden
 - Integrierte Tastenkürzel-Hilfe (F1 oder ?)
-- SwyxIt! läuft unsichtbar im Hintergrund (automatischer Start)
 
 **Kontakte & Verlauf**
 - Firmen-Kontaktbuch mit Schnellsuche (Echtdaten vom Swyx-Server)
@@ -32,7 +31,7 @@ SwyxConnect ersetzt die SwyxIt!-Oberfläche vollständig. SwyxIt! läuft dabei u
 **Präsenz**
 - Eigener Status: Verfügbar, Beschäftigt, Abwesend, Nicht stören
 - Echtzeit-Präsenz aller Kollegen
-- Bidirektionale Synchronisierung mit Microsoft Teams (Azure AD)
+- Bidirektionale Synchronisierung mit Microsoft Teams
 
 **Callcenter**
 - Agent-Dashboard mit Warteschlangen-Übersicht
@@ -44,29 +43,9 @@ SwyxConnect ersetzt die SwyxIt!-Oberfläche vollständig. SwyxIt! läuft dabei u
 - Klappbare Sidebar mit Badge-Zählern
 - Custom Titlebar mit Verbindungsstatus
 - System-Tray-Integration
+- Audiogeräte-Auswahl mit Testfunktion
 - Vollständig deutsche Benutzeroberfläche
-
----
-
-## Screenshots
-
-### Telefon — Dialpad mit Leitungsanzeige
-![Telefon](docs/screenshots/phone-view.png)
-
-### Kontakte — Firmen-Kontaktbuch mit Echtzeitdaten
-![Kontakte](docs/screenshots/contacts-view.png)
-
-### Anrufliste — Verlauf mit Richtungsfilter
-![Anrufliste](docs/screenshots/history-view.png)
-
-### Callcenter — Dashboard mit KPIs und Team-Übersicht
-![Callcenter](docs/screenshots/callcenter-view.png)
-
-### Einstellungen — Theme, Audio, Telefonie, Teams
-![Einstellungen](docs/screenshots/settings-view.png)
-
-### Tastaturkürzel — Übersicht aller Hotkeys (F1)
-![Tastaturkürzel](docs/screenshots/keyboard-shortcuts.png)
+- Alle Einstellungen werden dauerhaft gespeichert
 
 ---
 
@@ -84,70 +63,31 @@ SwyxConnect ersetzt die SwyxIt!-Oberfläche vollständig. SwyxIt! läuft dabei u
 
 ## Installation
 
-SwyxConnect startet SwyxIt! automatisch im Hintergrund und versteckt alle Fenster. Der Benutzer sieht nur SwyxConnect.
+### Download (empfohlen)
+
+1. [GitHub Releases](https://github.com/Ralle1976/SwyxConnect/releases) öffnen
+2. `SwyxConnect-1.0.0-win-ia32.zip` herunterladen (ca. 120 MB)
+3. Zip in einen beliebigen Ordner entpacken (z.B. `C:\SwyxConnect\`)
+4. `SwyxConnect.exe` starten
 
 ### Voraussetzungen
 
-| Anforderung | Details |
-|---|---|
-| **Betriebssystem** | Windows 10/11 (x86/x64) |
-| **Swyx-Client** | SwyxIt! 14.x installiert und am Server angemeldet |
-| **.NET Runtime** | .NET 8 Desktop Runtime (x86) |
-| **Optional** | Microsoft Teams (für Präsenz-Sync) |
+- **SwyxIt! 14.x** muss installiert und einmalig am Swyx-Server angemeldet sein
+- **.NET 8 Desktop Runtime (x86)** — [Download](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-### Schnellstart
+### So funktioniert es
 
-1. SwyxIt! installieren und einmalig am Swyx-Server anmelden
-2. `dist/SwyxConnect/`-Ordner an beliebigen Ort kopieren (z.B. `C:\SwyxConnect\`)
-3. `SwyxConnect.bat` doppelklicken
+1. SwyxConnect startet SwyxIt! automatisch im Hintergrund
+2. SwyxIt! baut den RemoteConnector-Tunnel zum Server auf
+3. Nach erfolgreichem Tunnel-Aufbau wird SwyxIt! beendet
+4. CLMgr.exe hält die Serververbindung eigenständig
+5. SwyxConnect kommuniziert über COM mit CLMgr
 
-**So funktioniert es:**
-- SwyxConnect startet SwyxIt! automatisch im Hintergrund
-- Alle SwyxIt!-Fenster werden unsichtbar gemacht
-- SwyxIt! stellt die Serververbindung her, SwyxConnect übernimmt die Bedienung
-
-### Variante B: CLMgr Standalone (experimentell)
-
-Für Umgebungen ohne vollständige SwyxIt!-Installation. CLMgr-Dateien werden aus einer vorhandenen SwyxIt!-Installation kopiert und als COM-Server registriert.
-
-**Voraussetzung:** Zugriff auf eine SwyxIt!-Installation (lokal oder im Netzwerk) als Quelle für die CLMgr-Dateien.
-
-```powershell
-# Automatisches Setup (als Administrator)
-.\scripts\setup-clmgr.ps1
-
-# Oder mit explizitem Quellpfad
-.\scripts\setup-clmgr.ps1 -SourcePath "\\server\share\SwyxIt!"
-
-# Deinstallation
-.\scripts\setup-clmgr.ps1 -Uninstall
-```
-
-Alternativ kann die COM-Registrierung manuell über die Registry-Dateien erfolgen:
-
-```
-scripts\register-clmgr.reg    → COM registrieren (als Admin ausführen)
-scripts\unregister-clmgr.reg  → COM entfernen
-```
-
-> **Hinweis:** CLMgr.exe und zugehörige DLLs sind proprietäre Swyx/Enreach-Dateien und werden nicht mit SwyxConnect ausgeliefert.
-
-### Diagnose
-
-```powershell
-# Prüft CLMgr, COM-Registrierung, Ports und .NET Runtime
-.\scripts\check-clmgr.ps1
-```
+**Der Benutzer sieht zu keinem Zeitpunkt ein SwyxIt!-Fenster.**
 
 ---
 
-### Aus Releases (empfohlen)
-
-1. Neuestes Release von [GitHub Releases](https://github.com/Ralle1976/SwyxConnect/releases) herunterladen
-2. Installer ausführen
-3. SwyxConnect starten — verbindet sich automatisch
-
-### Aus Quellcode
+## Aus Quellcode bauen
 
 ```bash
 git clone https://github.com/Ralle1976/SwyxConnect.git
@@ -155,10 +95,9 @@ cd SwyxConnect
 npm install
 ```
 
-**C# Bridge bauen:**
+**C# Bridge bauen** (.NET 8 SDK erforderlich):
 
 ```bash
-# .NET 8 SDK erforderlich
 dotnet publish bridge/SwyxBridge/SwyxBridge.csproj -c Release -r win-x86 --self-contained false -o out/bridge
 ```
 
@@ -172,19 +111,8 @@ npm run dev
 
 ```bash
 npx electron-vite build
-npm run build:win
+npx electron-builder --win --ia32
 ```
-
-### Deployment-Paket
-
-Ein fertiges Deployment-Paket liegt unter `dist/SwyxConnect/`. Diesen Ordner einfach auf den Zielrechner kopieren und `SwyxConnect.bat` starten.
-
-**Inhalt:**
-- `SwyxConnect.bat` — Starter-Script
-- `LIESMICH.txt` — Kurzanleitung
-- `app/` — Electron-Anwendung (Main, Preload, Renderer)
-- `bridge/` — SwyxBridge (COM-Verbindung zu Swyx)
-- `resources/` — Icons
 
 ---
 
@@ -198,7 +126,6 @@ Ein fertiges Deployment-Paket liegt unter `dist/SwyxConnect/`. Diesen Ordner ein
 | State Management | Zustand |
 | Build-System | electron-vite |
 | IPC-Protokoll | JSON-RPC 2.0 über stdin/stdout |
-| Installer | electron-builder (NSIS) |
 
 ### Architektur
 
@@ -213,25 +140,18 @@ Ein fertiges Deployment-Paket liegt unter `dist/SwyxConnect/`. Diesen Ordner ein
 │        │ stdin/stdout (JSON-RPC 2.0)            │
 │  ┌─────▼─────────────────────────────────────┐  │
 │  │  SwyxBridge.exe  (.NET 8, x86)            │  │
-│  │  COM Interop → CLMgr → SwyxIt! (hidden)   │  │
-│  │  WindowHook: SwyxIt!-Fenster versteckt    │  │
+│  │  → Startet SwyxIt! hidden                 │  │
+│  │  → Wartet auf Tunnel (Port 9094)          │  │
+│  │  → Killt SwyxIt! nach Tunnel-Aufbau       │  │
+│  │  → COM Attach auf CLMgr.exe               │  │
 │  └─────────────────────────────────────────┘  │
+│        │ COM Interop (Attach-Modus)            │
+│  ┌─────▼─────────────────────────────────────┐  │
+│  │  CLMgr.exe (hält Tunnel eigenständig)     │  │
+│  │  RemoteConnector → Swyx Server            │  │
+│  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
-
----
-
-## Scripts
-
-| Script | Beschreibung |
-|---|---|
-| `scripts/setup-clmgr.ps1` | CLMgr Standalone-Setup (kopiert Dateien + registriert COM) |
-| `scripts/check-clmgr.ps1` | Diagnose: CLMgr, COM, Ports, .NET Runtime |
-| `scripts/register-clmgr.reg` | Manuelle COM-Registrierung via Registry |
-| `scripts/unregister-clmgr.reg` | COM-Registrierung entfernen |
-| `scripts/build-bridge.ps1` | C# Bridge bauen und deployen |
-| `scripts/test-bridge.mjs` | Bridge-Verbindungstest (JSON-RPC) |
-| `dist/SwyxConnect/SwyxConnect.bat` | Starter-Script für das Deployment-Paket |
 
 ---
 
@@ -245,8 +165,7 @@ Die vollständige Dokumentation befindet sich im [Wiki](https://github.com/Ralle
 - [Kontakte & Verlauf](https://github.com/Ralle1976/SwyxConnect/wiki/Kontakte-und-Verlauf) — Kontaktbuch, Anrufhistorie
 - [Präsenz & Teams](https://github.com/Ralle1976/SwyxConnect/wiki/Praesenz) — Status, Kollegen, Teams-Sync
 - [Callcenter](https://github.com/Ralle1976/SwyxConnect/wiki/Callcenter) — Dashboard, Warteschlangen
-- [Einstellungen](https://github.com/Ralle1976/SwyxConnect/wiki/Einstellungen) — Theme, Konfiguration
-- [Entwicklung](https://github.com/Ralle1976/SwyxConnect/wiki/Entwicklung) — Setup, Build, Architektur
+- [Einstellungen](https://github.com/Ralle1976/SwyxConnect/wiki/Einstellungen) — Theme, Audio, Konfiguration
 
 ---
 

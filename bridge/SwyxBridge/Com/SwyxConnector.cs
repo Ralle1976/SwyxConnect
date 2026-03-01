@@ -9,8 +9,11 @@ namespace SwyxBridge.Com;
 /// Verwendet das typisierte Swyx.Client.ClmgrAPI NuGet-Paket (v14.21.0).
 /// 
 /// Verbindungsmodi:
-///   ATTACH (Standard): SwyxIt! läuft → COM-Objekt nutzt dessen Session. Kein DispInit nötig.
-///   STANDALONE: Ohne SwyxIt! → DispInit(serverName) für eigene Session.
+///   ATTACH: SwyxIt!/CLMgr läuft bereits → COM-Objekt nutzt dessen Session.
+///   PUBINIT: Ohne SwyxIt! → PubInit(server) über IClientLineMgrPub (IUnknown vtable).
+///   DISPINIT: Fallback → DispInit(server) über IDispatch (bekanntermaßen E_NOTIMPL).
+///
+/// Reihenfolge: Attach → PubInit → PubInitEx → DispInit
 ///
 /// WICHTIG: __ComObject aus ProgID kann nur IDispatch-Methoden (Disp*) direkt via dynamic aufrufen.
 /// Methoden auf Pub/Ex-Interfaces (PubInit, UnInit, PubGetServerFromAutoDetection) 
@@ -109,28 +112,82 @@ public sealed class SwyxConnector : IDisposable
             }
         }
 
-        // Step 3: DispInit with server (Standalone-Modus) — via IDispatch
+        // Step 3: Standalone-Init — PubInit FIRST, dann PubInitEx, dann DispInit
         if (!string.IsNullOrEmpty(serverName))
         {
-            Logging.Info($"SwyxConnector: DispInit({serverName})...");
+            bool initSuccess = false;
+
+            // 3a: PubInit via IClientLineMgrPub (IUnknown vtable — SwyxIt! nutzt intern genau das!)
             try
             {
-                int result = _clmgr.DispInit(serverName);
-                if (result == 0)
-                    Logging.Info("SwyxConnector: DispInit erfolgreich.");
-                else if (result == E_NOTIMPL)
-                    Logging.Warn("SwyxConnector: DispInit returned E_NOTIMPL — Standalone-Modus nicht unterstützt. SwyxIt! muss laufen.");
-                else
-                    Logging.Warn($"SwyxConnector: DispInit returned 0x{result:X8} ({result})");
+                Logging.Info($"SwyxConnector: === PubInit(\"{serverName}\") via IClientLineMgrPub ===");
+                var pub = (IClientLineMgrPub)(object)_clmgr;
+                pub.PubInit(serverName);
+                Logging.Info("SwyxConnector: PubInit() returned without exception!");
+                initSuccess = true;
+            }
+            catch (InvalidCastException)
+            {
+                Logging.Warn("SwyxConnector: IClientLineMgrPub not available (QueryInterface failed).");
+            }
+            catch (COMException ex)
+            {
+                Logging.Warn($"SwyxConnector: PubInit HRESULT=0x{ex.HResult:X8}: {ex.Message}");
+                if (ex.HResult == E_NOTIMPL)
+                    Logging.Warn("SwyxConnector: PubInit -> E_NOTIMPL (same as DispInit).");
             }
             catch (Exception ex)
             {
-                Logging.Warn($"SwyxConnector: DispInit failed: {ex.Message}");
+                Logging.Warn($"SwyxConnector: PubInit: {ex.GetType().Name}: {ex.Message}");
             }
+
+            // 3b: PubInitEx via IClientLineMgrPub2 (mit Backup-Server)
+            if (!initSuccess)
+            {
+                try
+                {
+                    Logging.Info($"SwyxConnector: === PubInitEx(\"{serverName}\", \"\") via IClientLineMgrPub2 ===");
+                    var pub2 = (IClientLineMgrPub2)(object)_clmgr;
+                    pub2.PubInitEx(serverName, "");
+                    Logging.Info("SwyxConnector: PubInitEx() returned without exception!");
+                    initSuccess = true;
+                }
+                catch (InvalidCastException)
+                {
+                    Logging.Warn("SwyxConnector: IClientLineMgrPub2.PubInitEx not available.");
+                }
+                catch (COMException ex)
+                {
+                    Logging.Warn($"SwyxConnector: PubInitEx HRESULT=0x{ex.HResult:X8}: {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    Logging.Warn($"SwyxConnector: PubInitEx: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            // 3c: DispInit Fallback (IDispatch — bekanntermaßen E_NOTIMPL)
+            if (!initSuccess)
+            {
+                Logging.Info($"SwyxConnector: === DispInit(\"{serverName}\") via IDispatch (Fallback) ===");
+                try
+                {
+                    int result = _clmgr.DispInit(serverName);
+                    if (result == 0) { Logging.Info("SwyxConnector: DispInit succeeded."); initSuccess = true; }
+                    else if (result == E_NOTIMPL) Logging.Warn("SwyxConnector: DispInit -> E_NOTIMPL.");
+                    else Logging.Warn($"SwyxConnector: DispInit -> 0x{result:X8}");
+                }
+                catch (Exception ex) { Logging.Warn($"SwyxConnector: DispInit: {ex.Message}"); }
+            }
+
+            if (initSuccess)
+                Logging.Info("SwyxConnector: Init-Methode erfolgreich aufgerufen. Prüfe Login-Status...");
+            else
+                Logging.Warn("SwyxConnector: ALLE Init-Methoden fehlgeschlagen.");
         }
         else
         {
-            Logging.Info("SwyxConnector: No server specified. Attach-Modus erwartet laufende SwyxIt!-Instanz.");
+            Logging.Info("SwyxConnector: No server specified. Attach-Modus erwartet laufende CLMgr-Instanz.");
         }
 
         // Step 4: Check connection state

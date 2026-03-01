@@ -110,13 +110,64 @@ DECISION: Deployment = Komplettpaket in dist/SwyxConnect/ zum Kopieren
 - `as any`, `@ts-ignore`, `@ts-expect-error` in TypeScript
 - Secrets in Code oder Commits
 
-### KRITISCHE ERKENNTNIS: DispInit = E_NOTIMPL
+### KRITISCHE ERKENNTNIS: Standalone-Init = UNMÖGLICH
 
-`DispInit("serverName")` gibt `E_NOTIMPL (0x80004001)` zurück. Der Standalone-Modus des CLMgr COM-Objekts ist NICHT implementiert. COM-Zugriff funktioniert NUR im Attach-Modus, wenn SwyxIt!.exe als COM-Host läuft.
+**Alle drei Init-Methoden des CLMgr COM-Objekts sind E_NOTIMPL:**
 
-**Konsequenz**: SwyxIt!.exe MUSS laufen (wird automatisch versteckt gestartet). Der RemoteConnector-Tunnel auf Port 15021 ist ein proprietäres Binärprotokoll — nur SwyxIt!/CLMgr kann ihn aufbauen.
+| Methode | Interface | Ergebnis |
+|---|---|---|
+| `PubInit(server)` | `IClientLineMgrPub` (IUnknown vtable) | `NotImplementedException` |
+| `PubInitEx(server, backup)` | `IClientLineMgrPub2` (IUnknown vtable) | `NotImplementedException` |
+| `DispInit(server)` | `IClientLineMgrDisp` (IDispatch) | `E_NOTIMPL (0x80004001)` |
 
-**Option 2 (parallel)**: Decompilierung von `IpPbx.Client.Plugin.ComSocket.dll` (.NET Assembly) könnte den Tunnel-Client offenlegen und SwyxIt! langfristig ersetzen.
+Der Standalone-Modus ist komplett deaktiviert — sowohl IUnknown als auch IDispatch Level.
+COM-Zugriff funktioniert NUR im Attach-Modus mit SwyxIt!.exe als Host-Prozess.
+
+**Konsequenz**: SwyxIt!.exe wird temporär gestartet, baut den Tunnel auf, und wird dann gekillt.
+CLMgr.exe hält den Tunnel eigenständig. SwyxConnect nutzt COM im Attach-Modus.
+
+```
+DECISION: PubInit/PubInitEx/DispInit = ALLE E_NOTIMPL — Standalone unmöglich
+DECISION: Kill-after-tunnel = SwyxIt! starten → Tunnel warten → SwyxIt! killen → CLMgr hält Tunnel
+```
+
+### Tunnel-Architektur (Verifiziert)
+
+```
+1. SwyxBridge startet SwyxIt!.exe hidden (WindowHook unterdrückt alle Fenster)
+2. SwyxIt! initialisiert CLMgr.exe mit PbxServer-Adresse
+3. CLMgr liest Registry-Konfiguration + Client-Zertifikat aus Windows Cert Store
+4. CLMgr authentifiziert via HTTPS beim RemoteConnector-Auth-Server
+5. CLMgr öffnet TCP-Tunnel zum RemoteConnector (proprietäres Binärprotokoll)
+6. Tunnel proxied: CDS auf :9094, SIP auf :5060, RTP auf :40000-40009
+7. SwyxBridge killt SwyxIt!.exe — CLMgr hält Tunnel eigenständig
+8. SwyxConnect nutzt COM im Attach-Modus über CLMgr
+```
+
+### Registry-Konfiguration (CLMgr Tunnel)
+
+```
+HKCU\Software\Swyx\SwyxIt!\CurrentVersion\Options:
+  PbxServer          = "{SWYX_SERVER}"        (interner Server)
+  PublicAuthServerName = "{REMOTE_CONNECTOR}:8021"  (Auth HTTPS)
+  PublicServerName   = "{REMOTE_CONNECTOR}:15021"   (Tunnel TCP)
+  ConnectorUsage     = 0|1|2                   (0=Auto, 1=Immer, 2=Nie)
+
+Windows Certificate Store (CurrentUser\My):
+  Client-Zertifikat erforderlich (Issuer: CN=SwyxRoot, O=SwyxWare)
+```
+
+### Decompilierung-Ergebnisse
+
+| DLL | Typ | Ergebnis |
+|---|---|---|
+| ComSocket.dll | .NET (SignalR) | Kein Tunnel-Code — nur Wrapper über CLMgr COM |
+| IpPbxCDSWrap.dll | C++/CLI mixed-mode | Native Stubs — kein Tunnel-Code zugänglich |
+| IpPbxCDSClientLib.dll | .NET (WCF) | RC-Config lesen — kein Tunnel-Aufbau |
+| Interop.CLMgr.dll | .NET (COM Interop) | Vollständige COM-Schnittstelle — keine Tunnel-Methoden |
+| CLMgr.exe | Native C++ (14MB) | **Tunnel ist hier** — nicht decompilierbar mit .NET-Tools |
+
+**Nächster Schritt**: Ghidra-Analyse von CLMgr.exe für native x86 Disassembly.
 
 ---
 
@@ -493,8 +544,8 @@ Dreistufige Eliminierung aller SwyxIt!-Fenster über `WindowHook.cs`:
 
 - **SwyxIt! v14.25.8537.0** (Deutsch, On-Premises CPE)
 - **Swyx SDK**: `Swyx.Client.ClmgrAPI` v14.21.0 (NuGet, 291 exportierte Typen)
-- **Benutzer**: `Ralf.Arnold@oneqrew.com`, SiteID 1, EntityID 23
-- **Swyx Server**: `172.18.3.202` (intern, REST-Ports blockiert)
+- **Benutzer**: `{SWYX_EMAIL}`, SiteID 1, EntityID 23
+- **Swyx Server**: `{SWYX_SERVER}` (intern, REST-Ports blockiert)
 - **COM CLSID**: `{f8e552f8-4c00-11d3-80bc-00105a653379}` (CLMgr.ClientLineMgr)
 - **Entwicklung**: WSL2 + Windows, Bridge-Files auf `C:\temp\SwyxBridge\` kopiert
 - **WICHTIG**: `new ClientLineMgrClass()` hängt auf STA-Thread — NUR `Type.GetTypeFromProgID` + `Activator.CreateInstance` verwenden!
@@ -609,9 +660,9 @@ interface ILogin {
 #### RemoteConnector-Konfiguration
 ```csharp
 class TRemoteConnectorConfig {
-  TEndPoint AuthenticationEndpoint;       // z.B. RC0321.axxess.de:8021
+  TEndPoint AuthenticationEndpoint;       // z.B. {REMOTE_CONNECTOR}:8021
   TEndPoint AuthenticationFallbackEndpoint;
-  TEndPoint ConnectorEndpoint;            // z.B. RC0321.axxess.de:15021
+  TEndPoint ConnectorEndpoint;            // z.B. {REMOTE_CONNECTOR}:15021
   TEndPoint ConnectorFallbackEndpoint;
   bool Enabled;
   int CertificateMode;
@@ -664,11 +715,11 @@ class TenantInfo {
 
 #### CLMgr Tunnel-Verbindung
 ```
-TCP 192.168.178.130:65054 → 193.192.0.54:15021 (RemoteConnector Tunnel)
+TCP {LOCAL_IP}:65054 → {RC_PUBLIC_IP}:15021 (RemoteConnector Tunnel)
 CLMgr exponiert lokal: CDS auf :9094, SIP auf :5060, RTP auf :40000-40009
 ```
 
-#### Öffentlicher Server (RC0321.axxess.de)
+#### Öffentlicher Server ({REMOTE_CONNECTOR})
 | Port | Status | Befund |
 |------|--------|--------|
 | 15021/TCP | OPEN | Proprietärer Tunnel — kein TLS, kein SIP |
@@ -676,11 +727,11 @@ CLMgr exponiert lokal: CDS auf :9094, SIP auf :5060, RTP auf :40000-40009
 
 ### SIP REGISTER Probe-Ergebnisse
 
-#### Ergebnis (SIP/UDP auf localhost:5060, User 'Ralf Arnold')
+#### Ergebnis (SIP/UDP auf localhost:5060, User '{SWYX_USER}')
 ```
 Responses: 2 (100 Trying → 403 Forbidden)
 Status: SIP/2.0 403 Forbidden
-Warning: 399 172.18.3.202 "access denied"
+Warning: 399 {SWYX_SERVER} "access denied"
 User-Agent: Swyx IpPbxSrv/14.25 (Swyx.Core_14.25_20251125.1)
 Path: <sip:127.0.0.1:5060;transport=udp;lr>
 ```

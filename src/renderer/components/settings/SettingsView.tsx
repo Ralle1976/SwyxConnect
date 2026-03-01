@@ -546,7 +546,7 @@ export default function SettingsView() {
             <input
               type="text"
               value={pbxServerInput}
-              placeholder="z. B. 172.18.3.202"
+              placeholder="z. B. swyx-server.firma.local"
               onChange={(e) => setPbxServerInput(e.target.value)}
               onBlur={commitPbxServer}
               onKeyDown={(e) => {
