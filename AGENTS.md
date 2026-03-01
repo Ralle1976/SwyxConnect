@@ -403,14 +403,92 @@ Der Tunnel ist tief in CLMgr.exe eingebettet:
 3. `Init()` → `InitEx()` → `CDSConnect()` Kette aufrufen
 4. Falls Tunnel startet → kein SwyxIt!.exe nötig
 
+### CSTA Session-Architektur (0x5ca9eb und Umgebung)
+
+Die SIP/CSTA-Funktionalität ist in der Klasse `SCstaSession` gekapselt.
+88+ Methoden identifiziert, darunter:
+
+**Session-Lifecycle:**
+- `SCstaSession::Init` (0x5c0d9e) — Speichert Config-Pointer in `[edi+0x74]`, `ret 4`
+- `SCstaSession::SetOptions` (0x5ca9eb) — Setzt CSTA-Optionen, ruft `0x689e49` mit Param 4, delegiert an `[edi+0x78]` via `0x5bbe10`, `ret 4`
+- `SCstaSession::StartSession` (0x5cad46) — Prüft Session-State `[ebx+0x1c8]`:
+  - State 0 oder 1: Session starten (Hauptpfad)
+  - State 5 (e_SessionRetryPending): Loggt "Session is currently in state e_SessionRetryPending --> return"
+  - State 3 oder 4 (stopping): Loggt "Session is stopping.", setzt State auf 4
+  - Sonst: Loggt "Session cannot be started"
+- `SCstaSession::StopSession` — Beendet aktive Session
+- `SCstaSession::MakeSessionRetry` — Retry-Logik nach Verbindungsabbruch
+- `SCstaSession::GetValidLoginId` — Login-ID für SIP-Registrierung
+
+**Anruf-Steuerung (CSTA-Operationen):**
+- `auxMakeCall`, `auxConsultationCall`, `auxClearConnection`
+- `auxHoldCall`, `auxRetrieveCall`, `auxAnswerCall`
+- `auxDeflectCall`, `auxAlternateCall`, `auxReconnectCall`
+- `auxTransferCall`, `auxSingleStepTransferCall`, `auxConferenceCall`
+- `auxSnapShotDevice`, `auxGetLineState`, `auxSelectLine`
+
+**Event-Handling (CSTA-Events):**
+- `HandleCstaOriginatedEvent`, `HandleCstaDeliveredEvent`
+- `HandleCstaEstablishedEvent`, `HandleCstaConnClearedEvent`
+- `HandleCstaHeldEvent`, `HandleCstaRetrievedEvent`
+- `HandleCstaTransferredEvent`, `HandleCstaConferencedEvent`
+- `HandleCstaDivertedEvent`, `HandleCstaNetworkReachedEvent`
+- `MapEvent2Line`, `MapDeliveredEvent2NotificationCall`
+- `SetLineState`, `FindFreeLine`, `SelectLineOnFirstCall`
+
+**Session-Handler:** `CstaSessionHandler` aus `C:\a\1\s\Shared Components\uaCSTASipConnector\CstaSessionHandler.cpp`
+— SIP/CSTA-Connector der über reSIProcate den SIP-Stack anspricht.
+
+### AutoDetection (0x4c9895) — Server-Erkennung
+
+Funktion: `CCLineMgr::LookupServerNamesInitially`
+
+**Ablauf:**
+1. **DHCP-Abfrage** via `CCLineMgr::RetrieveServerNamesFromDhcp` (0x4dd0e2)
+   - Ergebnis 0: "DHCP supported, retrieved addresses" → Flags `[edi+0x1afd/1afe]` = 1
+   - Ergebnis 1: "DHCP supported, but retrieved no addresses" → Flag `[edi+0x1afd]` = 1
+   - Ergebnis 0x80070078: "DHCP not supported" → Flags bleiben 0
+
+2. **DNS-Abfrage** via `CCLineMgr::RetrieveServerNamesFromDNS` (0x4dcd42)
+   - Ergebnis 0: "DNS supported, retrieved addresses" → Flags `[edi+0x1b00/1b01]` = 1
+   - Ergebnis 1: "DNS supported, but retrieved no addresses" → Flag `[edi+0x1b00]` = 1
+   - Ergebnis 0x80070078: "DNS not supported" → Flags bleiben 0
+
+**DNS SRV Record Lookup-Kette (aus Strings):**
+```
+SDnsQuery::lookupNAPTR   → NAPTR Record
+SDnsQuery::lookupSRV     → SRV Records:
+  _sips._udp.{domain}    → SIPS über UDP
+  _sips._tcp.{domain}    → SIPS über TCP
+  _sip._dtls.{domain}    → SIP über DTLS
+  _sip._tcp.{domain}     → SIP über TCP
+  _sip._udp.{domain}     → SIP über UDP
+SDnsQuery::lookupARecords → A Records für aufgelöste Hosts
+```
+
+**Objekt-Offsets (AutoDetection):**
+```
+[edi+0x1acc]  — Server-Adress-Objekt (DHCP)
+[edi+0x1ae4]  — Server-Adress-Objekt (DNS)
+[edi+0x1afc]  — DHCP-Detection aktiviert (Byte)
+[edi+0x1afd]  — DHCP erfolgreich Flag (Byte)
+[edi+0x1afe]  — DHCP Adressen gefunden Flag (Byte)
+[edi+0x1aff]  — DNS-Detection aktiviert (Byte)
+[edi+0x1b00]  — DNS erfolgreich Flag (Byte)
+[edi+0x1b01]  — DNS Adressen gefunden Flag (Byte)
+[edi+0x1b28]  — Detection-Status (DWORD)
+[edi+0x1b2c]  — Detection-Ergebnis Flag 1 (Byte)
+[edi+0x1b2d]  — Detection-Ergebnis Flag 2 (Byte)
+[edi+0x17c]   — Logging ID
+```
+
 ### Noch zu disassemblieren
 
 | Adresse | Funktion | Status |
 |---------|----------|--------|
-| 0x5ca9eb | SIP/CSTA Session-Initialisierung (aus InitUser) | Ausstehend |
-| 0x4c9895 | AutoDetection-Implementierung | Ausstehend |
 | 0x973920 | CClientTunnel::Start (vollständig) | Teilweise |
-
+| 0x4dcc49 | RetrieveServerAddressesFromDhcp (innere Funktion) | Ausstehend |
+| 0x5cec9b | SCstaSession interne Setup-Funktion (aus StartSession) | Ausstehend |
 ### radare2 Nutzung (Referenz für Agenten)
 
 ```bash
