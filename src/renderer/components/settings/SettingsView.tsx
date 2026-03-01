@@ -271,6 +271,7 @@ export default function SettingsView() {
     audioOutputVolume,
     numberOfLines,
     teamsEnabled,
+    teamsIntegrationMode,
     setTheme,
     toggleSidebar,
     setStartMinimized,
@@ -281,10 +282,8 @@ export default function SettingsView() {
     setAudioOutputVolume,
     setNumberOfLines,
     setTeamsEnabled,
+    setTeamsIntegrationMode,
   } = useSettingsStore()
-  // Teams-Integrationsmodus (Store-Erweiterung durch anderen Agenten)
-  const teamsIntegrationMode = (useSettingsStore((s) => (s as Record<string, unknown>).teamsIntegrationMode) as string | undefined) ?? 'off'
-  const setTeamsIntegrationMode = ((useSettingsStore((s) => (s as Record<string, unknown>).setTeamsIntegrationMode) as ((mode: string) => void) | undefined) ?? (() => {}))
 
   // Audio-Geräte enumerieren
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
@@ -525,26 +524,26 @@ export default function SettingsView() {
           <div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2.5">Integrationsmodus</p>
             <div className="grid grid-cols-3 gap-2">
-              {[
+              {([
                 {
-                  id: 'local',
+                  id: 'local' as const,
                   icon: <Monitor size={15} />,
                   label: 'Lokal (COM)',
                   desc: 'Direkte Verbindung über Office-Schnittstelle — kein Azure nötig',
                 },
                 {
-                  id: 'graph',
+                  id: 'graph' as const,
                   icon: <Cloud size={15} />,
                   label: 'Microsoft Graph',
                   desc: 'Cloud-basierte Verbindung — Azure App-ID erforderlich',
                 },
                 {
-                  id: 'off',
+                  id: 'off' as const,
                   icon: <WifiOff size={15} />,
                   label: 'Deaktiviert',
                   desc: 'Teams-Integration ist ausgeschaltet',
                 },
-              ].map(({ id, icon, label, desc }) => {
+              ] as const).map(({ id, icon, label, desc }) => {
                 const active = teamsIntegrationMode === id
                 return (
                   <button

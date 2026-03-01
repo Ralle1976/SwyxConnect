@@ -15,7 +15,7 @@ interface SettingsStoreState {
   audioInputVolume: number;
   audioOutputVolume: number;
   teamsEnabled: boolean;
-  teamsEnabled: boolean;
+  numberOfLines: number;
   teamsIntegrationMode: TeamsIntegrationMode;
   // Actions
   setTheme: (theme: Theme) => void;
@@ -93,7 +93,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
       },
       setNumberOfLines: (count) => {
         set({ numberOfLines: count });
-        get().saveToMain({ numberOfLines: count } as Partial<AppSettings>);
+        get().saveToMain({ numberOfLines: count });
         // Sofort an Bridge/COM senden
         if (window.swyxApi?.setNumberOfLines) {
           window.swyxApi.setNumberOfLines(count).catch(() => {});
@@ -119,7 +119,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
               audioInputVolume: settings.audioInputVolume ?? 80,
               audioOutputVolume: settings.audioOutputVolume ?? 80,
               teamsEnabled: settings.teamsEnabled ?? false,
-              numberOfLines: ((settings as Record<string, unknown>).numberOfLines as number | undefined) ?? 2,
+              numberOfLines: settings.numberOfLines ?? 2,
               teamsIntegrationMode: settings.teamsIntegrationMode ?? 'off',
             });
           }

@@ -11,11 +11,13 @@ const DEFAULTS: AppSettings = {
   audioOutputVolume: 80,
   teamsEnabled: false,
   teamsTokens: null,
+  teamsIntegrationMode: 'off',
   windowBounds: null,
   sidebarCollapsed: false,
   pluginsDirectory: '',
   startMinimized: false,
   closeToTray: true,
+  numberOfLines: 2,
 };
 
 export class SettingsStore {

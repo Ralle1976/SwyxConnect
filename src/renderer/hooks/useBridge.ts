@@ -16,12 +16,12 @@ export function useBridge(): BridgeHookResult {
 
   useEffect(() => {
     window.swyxApi
-      .getBridgeState()
+      ?.getBridgeState()
       .then(setBridgeState)
       .catch(() => setBridgeState(BridgeState.Disconnected));
 
-    const unsubscribe = window.swyxApi.onBridgeStateChanged(setBridgeState);
-    return unsubscribe;
+    const unsubscribe = window.swyxApi?.onBridgeStateChanged(setBridgeState);
+    return () => unsubscribe?.();
   }, []);
 
   return {
