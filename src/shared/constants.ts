@@ -43,6 +43,9 @@ export const IPC_CHANNELS = {
   TEAMS_LOCAL_SET_AVAILABILITY: 'swyx:teamsLocal:setAvailability',
   TEAMS_LOCAL_MAKE_CALL: 'swyx:teamsLocal:makeCall',
   TEAMS_LOCAL_GET_ACCOUNTS: 'swyx:teamsLocal:getAccounts',
+  TEAMS_LOCAL_GET_TEAMS_PRESENCE: 'swyx:teamsLocal:getTeamsPresence',
+  TEAMS_LOCAL_START_WATCH: 'swyx:teamsLocal:startWatch',
+  TEAMS_LOCAL_STOP_WATCH: 'swyx:teamsLocal:stopWatch',
   // TeamsLocal events (main → renderer)
   TEAMS_LOCAL_PRESENCE_CHANGED: 'swyx:teamsLocal:presenceChanged',
   TEAMS_LOCAL_INCOMING_CALL: 'swyx:teamsLocal:incomingCall',

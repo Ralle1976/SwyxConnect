@@ -44,3 +44,16 @@ resources/bridge/
 
 # COM debug dumps
 *_members.txt
+
+# Screenshots
+*.jpg
+*.png
+!resources/*.png
+
+# Debug scripts
+scripts/debug*.mjs
+scripts/call-debug*.mjs
+scripts/test-all.mjs
+scripts/test-bridge.ps1
+scripts/findlock.ps1
+scripts/unlock.ps1

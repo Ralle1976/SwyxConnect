@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { TitleBar } from '../components/layout/TitleBar'
 import { Sidebar } from '../components/layout/Sidebar'
@@ -60,6 +60,39 @@ export function App() {
       if (fetchedLines.length > 0) setLines(fetchedLines as import('../types/swyx').LineInfo[])
     } catch { /* Bridge noch nicht bereit */ }
   }, [setLines])
+
+  // Initiale Kollegenabfrage + Polling wenn Bridge verbunden
+  const fetchPresence = useCallback(async () => {
+    if (!window.swyxApi) return
+    try {
+      const result = await window.swyxApi.getPresence()
+      const colleagues = Array.isArray(result)
+        ? result
+        : (result as { colleagues: unknown[] } | null)?.colleagues ?? []
+      if (colleagues.length > 0) setColleagues(colleagues as import('../types/swyx').ColleaguePresence[])
+    } catch { /* Bridge noch nicht bereit */ }
+  }, [setColleagues])
+
+  const presenceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (isConnected) {
+      fetchPresence()
+      // Polling alle 30 Sekunden für Presence-Updates
+      presenceTimerRef.current = setInterval(fetchPresence, 30_000)
+    } else {
+      if (presenceTimerRef.current) {
+        clearInterval(presenceTimerRef.current)
+        presenceTimerRef.current = null
+      }
+    }
+    return () => {
+      if (presenceTimerRef.current) {
+        clearInterval(presenceTimerRef.current)
+        presenceTimerRef.current = null
+      }
+    }
+  }, [isConnected, fetchPresence])
 
   useEffect(() => {
     if (isConnected) fetchInitialLines()

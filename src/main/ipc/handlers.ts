@@ -170,6 +170,10 @@ export function registerIpcHandlers(
         win.webContents.send(IPC_CHANNELS.CALL_ENDED, evt.params);
         break;
 
+      case 'teamsPresenceChanged':
+        win.webContents.send(IPC_CHANNELS.TEAMS_LOCAL_PRESENCE_CHANGED, evt.params);
+        break;
+
       default:
         break;
     }
@@ -178,6 +182,7 @@ export function registerIpcHandlers(
 
 export function registerTeamsLocalIpcHandlers(
   teamsLocalService: TeamsLocalService,
+  bridgeManager: BridgeManager,
   getMainWindow: () => BrowserWindow | null
 ): void {
   ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_CONNECT, async () => {
@@ -200,6 +205,17 @@ export function registerTeamsLocalIpcHandlers(
   });
   ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_GET_ACCOUNTS, async () => {
     return teamsLocalService.getAccounts();
+  });
+
+  // Teams Presence Watcher (Bridge-seitig)
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_GET_TEAMS_PRESENCE, async () => {
+    return bridgeManager.sendRequest('teams.local.getTeamsPresence');
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_START_WATCH, async () => {
+    return bridgeManager.sendRequest('teams.local.startTeamsWatch');
+  });
+  ipcMain.handle(IPC_CHANNELS.TEAMS_LOCAL_STOP_WATCH, async () => {
+    return bridgeManager.sendRequest('teams.local.stopTeamsWatch');
   });
 
   // Forward TeamsLocal events to renderer

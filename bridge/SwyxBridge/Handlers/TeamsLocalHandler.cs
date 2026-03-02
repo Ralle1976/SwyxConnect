@@ -6,18 +6,27 @@ using SwyxBridge.Utils;
 namespace SwyxBridge.Handlers;
 
 /// <summary>
-/// Lightweight Teams handler — nur Registry-Check für Teams-Installationen.
-/// Die eigentliche Teams-Integration (Graph API, Presence-Polling) läuft
-/// komplett im TypeScript/Electron-Layer via @azure/msal-node.
+/// Teams-Handler mit lokaler Presence-Erkennung.
 ///
-/// C#-Bridge stellt nur noch bereit:
-///   teams.local.getAccounts — Erkennt installierte Teams-Versionen via Registry
-///   teams.local.getStatus   — Gibt "not_managed" zurück (wird von TS verwaltet)
-///   teams.local.connect     — Gibt Hinweis zurück, dass Graph API in TS läuft
-///   teams.local.disconnect  — No-op
+/// Bereitgestellte Methoden:
+///   teams.local.getAccounts        — Erkennt installierte Teams-Versionen via Registry
+///   teams.local.getTeamsPresence   — Aktueller Teams-Status (vom Watcher)
+///   teams.local.startTeamsWatch    — Startet die Log-/Process-Überwachung
+///   teams.local.stopTeamsWatch     — Stoppt die Überwachung
+///   teams.local.getStatus          — Kombinierter Status
+///   teams.local.connect            — Startet Watcher
+///   teams.local.disconnect         — Stoppt Watcher
+///   teams.local.getAvailability    — Aktueller Availability-String
 /// </summary>
 public sealed class TeamsLocalHandler
 {
+    private readonly TeamsPresenceWatcher _presenceWatcher;
+
+    public TeamsLocalHandler(TeamsPresenceWatcher presenceWatcher)
+    {
+        _presenceWatcher = presenceWatcher;
+    }
+
     public bool CanHandle(string method) => method switch
     {
         "teams.local.connect" or
@@ -26,7 +35,10 @@ public sealed class TeamsLocalHandler
         "teams.local.getAvailability" or
         "teams.local.setAvailability" or
         "teams.local.makeCall" or
-        "teams.local.getAccounts" => true,
+        "teams.local.getAccounts" or
+        "teams.local.getTeamsPresence" or
+        "teams.local.startTeamsWatch" or
+        "teams.local.stopTeamsWatch" => true,
         _ => false
     };
 
@@ -36,13 +48,16 @@ public sealed class TeamsLocalHandler
         {
             object? result = req.Method switch
             {
-                "teams.local.connect" => new { ok = false, error = "Teams integration is managed by the Electron app via Microsoft Graph API." },
-                "teams.local.disconnect" => new { ok = true },
-                "teams.local.getStatus" => new { connected = false, availability = "Unknown", managedBy = "electron-graph-api" },
-                "teams.local.getAvailability" => new { availability = "Unknown", managedBy = "electron-graph-api" },
-                "teams.local.setAvailability" => new { ok = false, error = "Use Graph API via Electron" },
-                "teams.local.makeCall" => new { ok = false, error = "Use Graph API via Electron" },
+                "teams.local.connect" => StartWatch(),
+                "teams.local.disconnect" => StopWatch(),
+                "teams.local.getStatus" => _presenceWatcher.GetStatus(),
+                "teams.local.getAvailability" => new { availability = _presenceWatcher.CurrentAvailability },
+                "teams.local.setAvailability" => new { ok = false, error = "Lokale Teams-Erkennung ist read-only" },
+                "teams.local.makeCall" => new { ok = false, error = "Nicht unterstützt über lokale Erkennung" },
                 "teams.local.getAccounts" => GetAccounts(),
+                "teams.local.getTeamsPresence" => _presenceWatcher.GetStatus(),
+                "teams.local.startTeamsWatch" => StartWatch(),
+                "teams.local.stopTeamsWatch" => StopWatch(),
                 _ => null
             };
 
@@ -55,6 +70,20 @@ public sealed class TeamsLocalHandler
             if (req.Id.HasValue)
                 JsonRpcEmitter.EmitError(req.Id.Value, JsonRpcConstants.ComError, ex.Message);
         }
+    }
+
+    private object StartWatch()
+    {
+        if (!_presenceWatcher.IsRunning)
+            _presenceWatcher.Start();
+        return new { ok = true, isRunning = _presenceWatcher.IsRunning };
+    }
+
+    private object StopWatch()
+    {
+        if (_presenceWatcher.IsRunning)
+            _presenceWatcher.Stop();
+        return new { ok = true, isRunning = false };
     }
 
     /// <summary>

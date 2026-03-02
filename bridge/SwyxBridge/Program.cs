@@ -28,6 +28,7 @@ static class Program
     private static HistoryHandler? _historyHandler;
     private static VoicemailHandler? _voicemailHandler;
     private static TeamsLocalHandler? _teamsLocalHandler;
+    private static TeamsPresenceWatcher? _teamsPresenceWatcher;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
     private static System.Windows.Forms.Timer? _windowSuppressor;
@@ -83,6 +84,7 @@ static class Program
         Application.Run(appCtx);
         // Cleanup
         Logging.Info("SwyxBridge beendet.");
+        _teamsPresenceWatcher?.Stop();
         _windowSuppressor?.Stop();
         _windowSuppressor?.Dispose();
         _heartbeat?.Stop();
@@ -121,7 +123,9 @@ static class Program
         _contactHandler = new ContactHandler(_connector);
         _historyHandler = new HistoryHandler(_connector);
         _voicemailHandler = new VoicemailHandler(_connector);
-        _teamsLocalHandler = new TeamsLocalHandler();
+        _teamsPresenceWatcher = new TeamsPresenceWatcher();
+        _teamsLocalHandler = new TeamsLocalHandler(_teamsPresenceWatcher);
+        _teamsPresenceWatcher.Start();
 
         // JSON-RPC Server auf Background-Thread starten
         _rpcServer = new JsonRpcServer(sta, DispatchRequest);

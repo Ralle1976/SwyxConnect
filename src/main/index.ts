@@ -109,7 +109,7 @@ app.on('before-quit', () => {
 // Register IPC handlers early (before whenReady) so they are available
 // as soon as the renderer makes its first invoke calls.
 registerIpcHandlers(bridgeManager, settingsStore, getMainWindow)
-registerTeamsLocalIpcHandlers(teamsLocalService, getMainWindow)
+registerTeamsLocalIpcHandlers(teamsLocalService, bridgeManager, getMainWindow)
 registerTeamsGraphIpcHandlers(teamsGraphService, getMainWindow)
 
 app.whenReady().then(() => {

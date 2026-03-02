@@ -262,7 +262,16 @@ function getAvailabilityLabel(availability: string): { label: string; colorClass
       return { label: 'Beschäftigt', colorClass: 'text-red-500 dark:text-red-400' }
     case 'DoNotDisturb':
       return { label: 'Nicht stören', colorClass: 'text-red-500 dark:text-red-400' }
+    case 'OnThePhone':
+      return { label: 'Am Telefon', colorClass: 'text-red-500 dark:text-red-400' }
+    case 'Presenting':
+      return { label: 'Präsentiert', colorClass: 'text-red-500 dark:text-red-400' }
+    case 'InAMeeting':
+      return { label: 'In Besprechung', colorClass: 'text-red-500 dark:text-red-400' }
+    case 'Focusing':
+      return { label: 'Konzentriert', colorClass: 'text-violet-500 dark:text-violet-400' }
     case 'BeRightBack':
+      return { label: 'Bin gleich zurück', colorClass: 'text-amber-500 dark:text-amber-400' }
     case 'Away':
       return { label: 'Abwesend', colorClass: 'text-amber-500 dark:text-amber-400' }
     case 'Offline':
@@ -314,6 +323,9 @@ export default function SettingsView() {
     isRegistered: boolean
   } | null>(null)
   const [connectionLoading, setConnectionLoading] = useState(false)
+  const [teamsLocalPresence, setTeamsLocalPresence] = useState<{
+    availability: string; activity: string; source: string; isRunning: boolean
+  } | null>(null)
 
   const enumerateDevices = useCallback(async () => {
     try {
@@ -375,6 +387,26 @@ export default function SettingsView() {
       unsub1()
       unsub2()
     }
+  }, [])
+
+  // Teams Local — Status laden + Events abonnieren
+  useEffect(() => {
+    window.swyxApi.teamsLocalGetTeamsPresence().then(setTeamsLocalPresence).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const unsub = window.swyxApi.onTeamsLocalPresenceChanged((data: unknown) => {
+      const p = data as { availability?: string; activity?: string; source?: string }
+      if (p && p.availability) {
+        setTeamsLocalPresence(prev => ({
+          availability: p.availability ?? 'Unknown',
+          activity: p.activity ?? 'Unknown',
+          source: p.source ?? 'unknown',
+          isRunning: prev?.isRunning ?? true
+        }))
+      }
+    })
+    return () => unsub()
   }, [])
 
   const handleTeamsLogin = async () => {
@@ -538,76 +570,62 @@ export default function SettingsView() {
       </SectionCard>
 
       {/* ─── Microsoft Teams ───────────────────────────────────────────── */}
-      <SectionCard title="Microsoft Teams" icon={<Wifi size={16} />}>
+      <SectionCard title="Microsoft Teams Präsenz" icon={<Wifi size={16} />}>
         <div className="flex flex-col gap-4">
 
-          {/* Status-Karte */}
+          {/* Lokale Erkennung Status */}
           <div className="flex items-center justify-between rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <span
                 className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                  !teamsGraphStatus?.loggedIn
+                  !teamsLocalPresence?.isRunning
                     ? 'bg-zinc-300 dark:bg-zinc-600'
-                    : ['Busy', 'BusyIdle', 'DoNotDisturb'].includes(teamsGraphStatus?.presence?.availability ?? '')
-                      ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.4)]'
-                      : ['BeRightBack', 'Away'].includes(teamsGraphStatus?.presence?.availability ?? '')
-                        ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]'
-                        : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
+                    : teamsLocalPresence?.availability === 'Unknown' || teamsLocalPresence?.availability === 'Offline'
+                      ? 'bg-zinc-400 dark:bg-zinc-500'
+                      : ['Busy', 'DoNotDisturb', 'OnThePhone'].includes(teamsLocalPresence?.availability ?? '')
+                        ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.4)]'
+                        : ['BeRightBack', 'Away'].includes(teamsLocalPresence?.availability ?? '')
+                          ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]'
+                          : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
                 }`}
               />
               <div className="flex flex-col">
                 <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  {teamsGraphStatus?.loggedIn
-                    ? (teamsGraphStatus.userName ?? 'Angemeldet')
-                    : 'Nicht angemeldet'}
+                  {teamsLocalPresence?.isRunning
+                    ? getAvailabilityLabel(teamsLocalPresence.availability).label
+                    : 'Erkennung nicht aktiv'}
                 </span>
-                {teamsGraphStatus?.loggedIn && teamsGraphStatus.presence && (
-                  <span className={`text-[10px] ${getAvailabilityLabel(teamsGraphStatus.presence.availability).colorClass}`}>
-                    {getAvailabilityLabel(teamsGraphStatus.presence.availability).label}
+                {teamsLocalPresence?.isRunning && teamsLocalPresence.source !== 'none' && (
+                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                    {teamsLocalPresence.source === 'logfile' && 'via Teams Log-Datei'}
+                    {teamsLocalPresence.source === 'logfile-new' && 'via New Teams Log-Datei'}
+                    {teamsLocalPresence.source === 'process-check' && 'via Process-Erkennung'}
                   </span>
                 )}
               </div>
             </div>
-            {teamsGraphStatus?.loggedIn && teamsGraphStatus.presence && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400">
-                {teamsGraphStatus.presence.activity}
+            {teamsLocalPresence?.isRunning && teamsLocalPresence.activity !== 'Unknown' && (
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                teamsLocalPresence.activity === 'InACall'
+                  ? 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
+                  : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+              }`}>
+                {teamsLocalPresence.activity === 'InACall' ? 'Im Gespräch' : 'Kein Gespräch'}
               </span>
             )}
           </div>
 
-          {/* Login / Logout Button */}
-          {teamsGraphStatus?.loggedIn ? (
-            <button
-              onClick={handleTeamsLogout}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-            >
-              Abmelden
-            </button>
-          ) : (
-            <button
-              onClick={handleTeamsLogin}
-              disabled={teamsLoggingIn}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white"
-            >
-              {teamsLoggingIn ? (
-                <RefreshCw size={12} className="animate-spin" />
-              ) : (
-                <Wifi size={12} />
-              )}
-              {teamsLoggingIn ? 'Wird angemeldet...' : 'Microsoft anmelden'}
-            </button>
-          )}
-
-          {/* Funktions-Checkliste */}
+          {/* Funktions-Info */}
           <div className="rounded-lg border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
             <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
-              Funktionsumfang
+              Erkennung
             </p>
             <div className="flex flex-col gap-1.5">
               {[
-                'Echtzeit-Präsenz Synchronisation',
-                'Microsoft 365 Cloud-Verbindung',
-                'Automatische Token-Erneuerung',
+                'Automatische Teams-Version-Erkennung (Legacy + New)',
+                'Log-Datei Überwachung (Classic Teams)',
+                'Process-Erkennung als Fallback',
+                'Echtzeit Status-Updates',
               ].map((feature) => (
                 <div key={feature} className="flex items-center gap-2">
                   <Check size={11} className="text-emerald-500 flex-shrink-0" />
@@ -617,9 +635,26 @@ export default function SettingsView() {
             </div>
           </div>
 
+          {/* Graph API Status (falls aktiv) */}
+          {teamsGraphStatus?.loggedIn && (
+            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 px-3 py-2.5">
+              <p className="text-[10px] font-semibold text-blue-400 dark:text-blue-500 uppercase tracking-wider mb-1">
+                Microsoft Graph API
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-blue-700 dark:text-blue-300">{teamsGraphStatus.userName ?? 'Angemeldet'}</span>
+                <button
+                  onClick={handleTeamsLogout}
+                  className="ml-auto text-[10px] text-red-500 hover:text-red-400 underline"
+                >
+                  Abmelden
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       </SectionCard>
-
       {/* ─── Telefonie ─────────────────────────────────────────────────────────── */}
       <SectionCard title="Telefonie" icon={<Phone size={16} />}>
         <div className="flex flex-col gap-3">

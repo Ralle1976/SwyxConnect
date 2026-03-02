@@ -15,6 +15,13 @@ files:
   - '!scripts/*'
   - '!electron.vite.config.*'
   - '!{.eslintrc,.gitignore,tsconfig.json}'
+  - '!**/*.jpg'
+  - '!**/*.png'
+  - '!*_members.txt'
+  - '!AGENTS.md'
+  - '!README.md'
+  - '!tsconfig.*.json'
+  - '!*.tsbuildinfo'
 extraResources:
   - from: out/bridge/
     to: bridge/
@@ -25,6 +32,8 @@ extraResources:
   - from: resources/icon.png
     to: icon.png
 win:
+  forceCodeSigning: false
+  signAndEditExecutable: false
   target:
     - target: nsis
       arch:

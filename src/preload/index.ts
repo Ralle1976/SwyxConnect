@@ -123,6 +123,12 @@ const swyxApi = {
     ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_MAKE_CALL, phoneNumber),
   teamsLocalGetAccounts: (): Promise<unknown[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_GET_ACCOUNTS),
+  teamsLocalGetTeamsPresence: (): Promise<{ availability: string; activity: string; source: string; isRunning: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_GET_TEAMS_PRESENCE),
+  teamsLocalStartWatch: (): Promise<{ ok: boolean; isRunning: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_START_WATCH),
+  teamsLocalStopWatch: (): Promise<{ ok: boolean; isRunning: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_STOP_WATCH),
 
   // TeamsLocal event listeners
   onTeamsLocalPresenceChanged: (callback: (status: unknown) => void): (() => void) => {
