@@ -29,6 +29,10 @@ static class Program
     private static VoicemailHandler? _voicemailHandler;
     private static TeamsLocalHandler? _teamsLocalHandler;
     private static TeamsPresenceWatcher? _teamsPresenceWatcher;
+    private static ForwardingHandler? _forwardingHandler;
+    private static ConferenceHandler? _conferenceHandler;
+    private static RecordingHandler? _recordingHandler;
+    private static SystemInfoHandler? _systemInfoHandler;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
     private static System.Windows.Forms.Timer? _windowSuppressor;
@@ -125,6 +129,10 @@ static class Program
         _voicemailHandler = new VoicemailHandler(_connector);
         _teamsPresenceWatcher = new TeamsPresenceWatcher();
         _teamsLocalHandler = new TeamsLocalHandler(_teamsPresenceWatcher);
+        _forwardingHandler = new ForwardingHandler(_connector, _lineManager);
+        _conferenceHandler = new ConferenceHandler(_connector);
+        _recordingHandler = new RecordingHandler(_connector);
+        _systemInfoHandler = new SystemInfoHandler(_connector);
         _teamsPresenceWatcher.Start();
 
         // JSON-RPC Server auf Background-Thread starten
@@ -176,6 +184,22 @@ static class Program
         else if (_voicemailHandler?.CanHandle(req.Method) == true)
         {
             _voicemailHandler.Handle(req);
+        }
+        else if (_forwardingHandler?.CanHandle(req.Method) == true)
+        {
+            _forwardingHandler.Handle(req);
+        }
+        else if (_conferenceHandler?.CanHandle(req.Method) == true)
+        {
+            _conferenceHandler.Handle(req);
+        }
+        else if (_recordingHandler?.CanHandle(req.Method) == true)
+        {
+            _recordingHandler.Handle(req);
+        }
+        else if (_systemInfoHandler?.CanHandle(req.Method) == true)
+        {
+            _systemInfoHandler.Handle(req);
         }
         else if (_teamsLocalHandler?.CanHandle(req.Method) == true)
         {

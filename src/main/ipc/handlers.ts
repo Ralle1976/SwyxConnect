@@ -119,6 +119,89 @@ export function registerIpcHandlers(
     return bridgeManager.sendRequest('unmute', { lineId });
   });
 
+  // ─── Forwarding & Advanced Call ─────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.FORWARD_CALL, async (_event, lineId: number, target: string) => {
+    return bridgeManager.sendRequest('forwardCall', { lineId, target });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.RESOLVE_NUMBER, async (_event, number: string) => {
+    return bridgeManager.sendRequest('resolveNumber', { number });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERT_NUMBER, async (_event, format: number, number: string) => {
+    return bridgeManager.sendRequest('convertNumber', { format, number });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REQUEST_CALLBACK_ON_BUSY, async (_event, name: string, number: string) => {
+    return bridgeManager.sendRequest('requestCallbackOnBusy', { name, number });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PICKUP_GROUP_CALL, async (_event, refId: number) => {
+    return bridgeManager.sendRequest('pickupGroupCall', { refId });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_GROUP_NOTIFICATIONS, async () => {
+    return bridgeManager.sendRequest('getGroupNotifications');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_CALL_ROUTING, async () => {
+    return bridgeManager.sendRequest('openCallRouting');
+  });
+
+  // ─── Conference ────────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.CREATE_CONFERENCE, async (_event, lineNumber: number) => {
+    return bridgeManager.sendRequest('createConference', { lineNumber });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.JOIN_LINE_TO_CONFERENCE, async (_event, lineNumber: number) => {
+    return bridgeManager.sendRequest('joinLineToConference', { lineNumber });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.JOIN_ALL_TO_CONFERENCE, async (_event, lineNumber: number) => {
+    return bridgeManager.sendRequest('joinAllToConference', { lineNumber });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_CONFERENCE_STATUS, async () => {
+    return bridgeManager.sendRequest('getConferenceStatus');
+  });
+
+  // ─── Recording ─────────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.START_RECORDING, async (_event, lineNumber: number) => {
+    return bridgeManager.sendRequest('startRecording', { lineNumber });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STOP_RECORDING, async (_event, lineNumber: number) => {
+    return bridgeManager.sendRequest('stopRecording', { lineNumber });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PLAY_SOUND, async (_event, file: string, device: number, repeat: number) => {
+    return bridgeManager.sendRequest('playSound', { file, device, repeat });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STOP_SOUND, async () => {
+    return bridgeManager.sendRequest('stopSound');
+  });
+
+  // ─── System Info ───────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.GET_SYSTEM_INFO, async () => {
+    return bridgeManager.sendRequest('getSystemInfo');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_AUDIO_DEVICES, async () => {
+    return bridgeManager.sendRequest('getAudioDevices');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SET_AUDIO_MODE, async (_event, mode: number) => {
+    return bridgeManager.sendRequest('setAudioMode', { mode });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SET_MICRO, async (_event, enabled: boolean) => {
+    return bridgeManager.sendRequest('setMicro', { enabled });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SET_SPEAKER, async (_event, enabled: boolean) => {
+    return bridgeManager.sendRequest('setSpeaker', { enabled });
+  });
   // ─── Window Controls ──────────────────────────────────────────────────────────
   ipcMain.on('window:minimize', () => { getMainWindow()?.minimize(); });
   ipcMain.on('window:maximize', () => {

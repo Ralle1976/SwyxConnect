@@ -28,6 +28,30 @@ export const IPC_CHANNELS = {
   UNMUTE: 'swyx:unmute',
   SET_NUMBER_OF_LINES: 'swyx:setNumberOfLines',
   GET_CONNECTION_INFO: 'swyx:getConnectionInfo',
+  // Forwarding & Advanced Call channels
+  FORWARD_CALL: 'swyx:forwardCall',
+  RESOLVE_NUMBER: 'swyx:resolveNumber',
+  CONVERT_NUMBER: 'swyx:convertNumber',
+  REQUEST_CALLBACK_ON_BUSY: 'swyx:requestCallbackOnBusy',
+  PICKUP_GROUP_CALL: 'swyx:pickupGroupCall',
+  GET_GROUP_NOTIFICATIONS: 'swyx:getGroupNotifications',
+  OPEN_CALL_ROUTING: 'swyx:openCallRouting',
+  // Conference channels
+  CREATE_CONFERENCE: 'swyx:createConference',
+  JOIN_LINE_TO_CONFERENCE: 'swyx:joinLineToConference',
+  JOIN_ALL_TO_CONFERENCE: 'swyx:joinAllToConference',
+  GET_CONFERENCE_STATUS: 'swyx:getConferenceStatus',
+  // Recording channels
+  START_RECORDING: 'swyx:startRecording',
+  STOP_RECORDING: 'swyx:stopRecording',
+  PLAY_SOUND: 'swyx:playSound',
+  STOP_SOUND: 'swyx:stopSound',
+  // System info channels
+  GET_SYSTEM_INFO: 'swyx:getSystemInfo',
+  GET_AUDIO_DEVICES: 'swyx:getAudioDevices',
+  SET_AUDIO_MODE: 'swyx:setAudioMode',
+  SET_MICRO: 'swyx:setMicro',
+  SET_SPEAKER: 'swyx:setSpeaker',
   // Event channels (main → renderer)
   LINE_STATE_CHANGED: 'swyx:lineStateChanged',
   BRIDGE_STATE_CHANGED: 'swyx:bridgeStateChanged',

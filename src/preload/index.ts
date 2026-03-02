@@ -76,6 +76,70 @@ const swyxApi = {
 
   getConnectionInfo: (): Promise<SwyxConnectionInfo> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_CONNECTION_INFO),
+
+  // --- Forwarding & Advanced Call ---
+  forwardCall: (lineId: number, target: string): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FORWARD_CALL, lineId, target),
+
+  resolveNumber: (number: string): Promise<{ name: string }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESOLVE_NUMBER, number),
+
+  convertNumber: (format: number, number: string): Promise<{ result: string }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CONVERT_NUMBER, format, number),
+
+  requestCallbackOnBusy: (name: string, number: string): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.REQUEST_CALLBACK_ON_BUSY, name, number),
+
+  pickupGroupCall: (refId: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PICKUP_GROUP_CALL, refId),
+
+  getGroupNotifications: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_GROUP_NOTIFICATIONS),
+
+  openCallRouting: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPEN_CALL_ROUTING),
+
+  // --- Conference ---
+  createConference: (lineNumber: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CREATE_CONFERENCE, lineNumber),
+
+  joinLineToConference: (lineNumber: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.JOIN_LINE_TO_CONFERENCE, lineNumber),
+
+  joinAllToConference: (lineNumber: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.JOIN_ALL_TO_CONFERENCE, lineNumber),
+
+  getConferenceStatus: (): Promise<{ running: boolean; lineNumber: number; participants: number }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_CONFERENCE_STATUS),
+
+  // --- Recording ---
+  startRecording: (lineNumber: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.START_RECORDING, lineNumber),
+
+  stopRecording: (lineNumber: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.STOP_RECORDING, lineNumber),
+
+  playSound: (file: string, device: number, repeat: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PLAY_SOUND, file, device, repeat),
+
+  stopSound: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.STOP_SOUND),
+
+  // --- System Info ---
+  getSystemInfo: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_SYSTEM_INFO),
+
+  getAudioDevices: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_AUDIO_DEVICES),
+
+  setAudioMode: (mode: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_AUDIO_MODE, mode),
+
+  setMicro: (enabled: boolean): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_MICRO, enabled),
+
+  setSpeaker: (enabled: boolean): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_SPEAKER, enabled),
   // --- Event Listener ---
   onLineStateChanged: (callback: (lines: LineInfo[]) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, lines: LineInfo[]): void => callback(lines)
