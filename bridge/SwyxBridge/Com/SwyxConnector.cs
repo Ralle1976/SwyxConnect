@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using SwyxBridge.Utils;
 
 namespace SwyxBridge.Com;
@@ -11,6 +12,8 @@ namespace SwyxBridge.Com;
 public sealed class SwyxConnector : IDisposable
 {
     private const string ProgId = "CLMgr.ClientLineMgr";
+    // Regex: Prozessname beginnt mit "SwyxIt" (case-insensitive) — erkennt auch Beta/RC/etc.
+    private static readonly Regex SwyxItProcessPattern = new(@"^swyxit", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private const string SwyxItExeName = "SwyxIt!";
     private const string SwyxItExePath = @"C:\Program Files (x86)\Swyx\SwyxIt!\SwyxIt!.exe";
     private const int E_ACCESSDENIED = unchecked((int)0x80070005);
@@ -77,11 +80,11 @@ public sealed class SwyxConnector : IDisposable
     /// </summary>
     private static void EnsureSwyxItRunning()
     {
-        // Pr\u00fcfe ob SwyxIt! bereits l\u00e4uft
-        var existing = Process.GetProcessesByName(SwyxItExeName);
+        // Prüfe ob SwyxIt! bereits läuft (Regex: Name beginnt mit 'SwyxIt')
+        var existing = FindSwyxItProcesses();
         if (existing.Length > 0)
         {
-            Logging.Info($"SwyxConnector: SwyxIt! läuft bereits (PID={existing[0].Id}). Verstecke Fenster...");
+            Logging.Info($"SwyxConnector: SwyxIt! läuft bereits (PID={existing[0].Id}, Name={existing[0].ProcessName}). Verstecke Fenster...");
             HideSwyxItWindows();
             return;
         }
@@ -142,7 +145,26 @@ public sealed class SwyxConnector : IDisposable
     }
 
     /// <summary>
+    /// Findet alle Prozesse deren Name mit "SwyxIt" beginnt (inkl. Beta, RC, etc.).
+    /// </summary>
+    internal static Process[] FindSwyxItProcesses()
+    {
+        return Process.GetProcesses()
+            .Where(p => { try { return SwyxItProcessPattern.IsMatch(p.ProcessName); } catch { return false; } })
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Prüft ob ein Prozessname zu SwyxIt! gehört (Regex: beginnt mit 'SwyxIt').
+    /// </summary>
+    internal static bool IsSwyxItProcess(string processName)
+    {
+        return SwyxItProcessPattern.IsMatch(processName);
+    }
+
+    /// <summary>
     /// Versteckt ALLE SwyxIt!-Fenster komplett (SW_HIDE).
+    /// Erkennt alle Varianten: SwyxIt!, SwyxIt! (Beta), SwyxItC, etc.
     /// </summary>
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -152,12 +174,12 @@ public sealed class SwyxConnector : IDisposable
     {
         try
         {
-            foreach (var proc in Process.GetProcessesByName(SwyxItExeName))
+            foreach (var proc in FindSwyxItProcesses())
             {
                 if (proc.MainWindowHandle != IntPtr.Zero)
                 {
                     ShowWindow(proc.MainWindowHandle, SW_HIDE);
-                    Logging.Info($"SwyxConnector: SwyxIt!-Fenster versteckt (PID={proc.Id}).");
+                    Logging.Info($"SwyxConnector: SwyxIt!-Fenster versteckt (PID={proc.Id}, Name={proc.ProcessName}).");
                 }
             }
         }
