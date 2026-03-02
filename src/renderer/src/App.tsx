@@ -78,8 +78,8 @@ export function App() {
   useEffect(() => {
     if (isConnected) {
       fetchPresence()
-      // Polling alle 30 Sekunden für Presence-Updates
-      presenceTimerRef.current = setInterval(fetchPresence, 30_000)
+      // Polling alle 10 Sekunden für Presence-Updates (Status-Änderungen)
+      presenceTimerRef.current = setInterval(fetchPresence, 10_000)
     } else {
       if (presenceTimerRef.current) {
         clearInterval(presenceTimerRef.current)

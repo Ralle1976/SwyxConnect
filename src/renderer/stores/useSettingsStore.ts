@@ -17,6 +17,8 @@ interface SettingsStoreState {
   teamsEnabled: boolean;
   numberOfLines: number;
   teamsIntegrationMode: TeamsIntegrationMode;
+  trunkPrefix: string;
+  trunkPrefixEnabled: boolean;
   // Actions
   setTheme: (theme: Theme) => void;
   toggleSidebar: () => void;
@@ -30,6 +32,8 @@ interface SettingsStoreState {
   setTeamsEnabled: (enabled: boolean) => void;
   setNumberOfLines: (count: number) => void;
   setTeamsIntegrationMode: (mode: TeamsIntegrationMode) => void;
+  setTrunkPrefix: (prefix: string) => void;
+  setTrunkPrefixEnabled: (enabled: boolean) => void;
   // Sync mit Main Process
   loadFromMain: () => Promise<void>;
   saveToMain: (patch: Partial<AppSettings>) => Promise<void>;
@@ -49,6 +53,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
       teamsEnabled: false,
       numberOfLines: 2,
       teamsIntegrationMode: 'off' as TeamsIntegrationMode,
+      trunkPrefix: '0',
+      trunkPrefixEnabled: true,
 
       setTheme: (theme) => {
         set({ theme });
@@ -103,6 +109,14 @@ export const useSettingsStore = create<SettingsStoreState>()(
         set({ teamsIntegrationMode: mode });
         get().saveToMain({ teamsIntegrationMode: mode });
       },
+      setTrunkPrefix: (prefix) => {
+        set({ trunkPrefix: prefix });
+        get().saveToMain({ trunkPrefix: prefix });
+      },
+      setTrunkPrefixEnabled: (enabled) => {
+        set({ trunkPrefixEnabled: enabled });
+        get().saveToMain({ trunkPrefixEnabled: enabled });
+      },
 
       loadFromMain: async () => {
         if (!window.swyxApi) return;
@@ -121,6 +135,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
               teamsEnabled: settings.teamsEnabled ?? false,
               numberOfLines: settings.numberOfLines ?? 2,
               teamsIntegrationMode: settings.teamsIntegrationMode ?? 'off',
+              trunkPrefix: settings.trunkPrefix ?? '0',
+              trunkPrefixEnabled: settings.trunkPrefixEnabled ?? true,
             });
           }
         } catch { /* Bridge noch nicht bereit */ }
@@ -147,6 +163,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
         teamsEnabled: state.teamsEnabled,
         numberOfLines: state.numberOfLines,
         teamsIntegrationMode: state.teamsIntegrationMode,
+        trunkPrefix: state.trunkPrefix,
+        trunkPrefixEnabled: state.trunkPrefixEnabled,
       }),
     }
   )

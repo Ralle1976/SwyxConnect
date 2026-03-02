@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useLineStore } from '../stores/useLineStore';
+import { useSettingsStore } from '../stores/useSettingsStore';
 import { LineState } from '../types/swyx';
 
 export interface CallHookResult {
@@ -17,9 +18,17 @@ export interface CallHookResult {
 export function useCall(): CallHookResult {
   const updateLine = useLineStore((s) => s.updateLine);
   const setLines   = useLineStore((s) => s.setLines);
+  const trunkPrefix = useSettingsStore((s) => s.trunkPrefix);
+  const trunkPrefixEnabled = useSettingsStore((s) => s.trunkPrefixEnabled);
 
   const dial = useCallback(async (number: string) => {
-    await window.swyxApi.dial(number);
+    let target = number.trim();
+    // Amtsvorwahl voranstellen, wenn aktiviert und Nummer extern aussieht
+    // Extern = länger als 4 Stellen und beginnt NICHT schon mit der Vorwahl
+    if (trunkPrefixEnabled && trunkPrefix && target.length > 4 && !target.startsWith(trunkPrefix)) {
+      target = trunkPrefix + target;
+    }
+    await window.swyxApi.dial(target);
     // Sofort nach dem Wählen den Leitungsstatus abfragen und UI aktualisieren
     try {
       const result = await window.swyxApi.getLines();
@@ -30,7 +39,7 @@ export function useCall(): CallHookResult {
     } catch {
       // Fehler ignorieren — lineStateChanged-Event folgt ohnehin
     }
-  }, [setLines]);
+  }, [setLines, trunkPrefix, trunkPrefixEnabled]);
 
   const answer = useCallback(async (lineId: number) => {
     await window.swyxApi.answer(lineId);

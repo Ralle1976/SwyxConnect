@@ -176,17 +176,20 @@ function AudioTestButton({ type }: { type: 'speaker' | 'mic' }) {
     setTesting(true)
     const ctx = new AudioContext()
     audioCtxRef.current = ctx
-    // Testton: 440Hz Sinus, 2 Sekunden, sanftes Fade
+    // Electron: AudioContext startet oft im 'suspended' Status
+    if (ctx.state === 'suspended') await ctx.resume()
+    // Testton: 440Hz Sinus, 3 Sekunden, gut hörbar
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.type = 'sine'
     osc.frequency.value = 440
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 2)
+    gain.gain.setValueAtTime(0.5, ctx.currentTime)
+    gain.gain.setValueAtTime(0.5, ctx.currentTime + 2.5)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 3)
     osc.connect(gain)
     gain.connect(ctx.destination)
     osc.start()
-    osc.stop(ctx.currentTime + 2)
+    osc.stop(ctx.currentTime + 3)
     osc.onended = () => stopTest()
   }, [stopTest])
 
@@ -197,6 +200,8 @@ function AudioTestButton({ type }: { type: 'speaker' | 'mic' }) {
       streamRef.current = stream
       const ctx = new AudioContext()
       audioCtxRef.current = ctx
+      // Electron: AudioContext startet oft im 'suspended' Status
+      if (ctx.state === 'suspended') await ctx.resume()
       const source = ctx.createMediaStreamSource(stream)
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 256
@@ -294,6 +299,8 @@ export default function SettingsView() {
     audioInputVolume,
     audioOutputVolume,
     numberOfLines,
+    trunkPrefix,
+    trunkPrefixEnabled,
     setTheme,
     toggleSidebar,
     setStartMinimized,
@@ -303,6 +310,8 @@ export default function SettingsView() {
     setAudioInputVolume,
     setAudioOutputVolume,
     setNumberOfLines,
+    setTrunkPrefix,
+    setTrunkPrefixEnabled,
   } = useSettingsStore()
 
   // Audio-Geräte enumerieren
@@ -732,6 +741,32 @@ export default function SettingsView() {
               <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">Fensterunterdrückung</span>
               <span className="text-xs text-zinc-500 dark:text-zinc-400">SwyxIt!-Fenster wird automatisch minimiert</span>
             </div>
+          </div>
+
+          {/* Amtsvorwahl */}
+          <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <ToggleRow
+              label="Amtsvorwahl verwenden"
+              description="Automatisch Vorwahl (z. B. 0) bei externen Nummern voranstellen"
+              value={trunkPrefixEnabled}
+              onChange={setTrunkPrefixEnabled}
+            />
+            {trunkPrefixEnabled && (
+              <div className="flex items-center gap-3 pl-1">
+                <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">Vorwahl</span>
+                <input
+                  type="text"
+                  value={trunkPrefix}
+                  onChange={(e) => setTrunkPrefix(e.target.value.replace(/[^0-9*#]/g, ''))}
+                  maxLength={4}
+                  className="w-20 text-center text-sm font-mono px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  placeholder="0"
+                />
+                <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                  Wird bei Nummern {'>'} 4 Stellen automatisch vorangestellt
+                </span>
+              </div>
+            )}
           </div>
 
         </div>
