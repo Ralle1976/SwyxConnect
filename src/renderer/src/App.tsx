@@ -9,6 +9,7 @@ import { useLineStore, getRingingLines, hasActiveCall } from '../stores/useLineS
 import { useSettingsStore, applyTheme } from '../stores/useSettingsStore'
 import { usePresenceStore } from '../stores/usePresenceStore'
 import { useCallHistoryTracker } from '../stores/useCallHistoryTracker'
+import { useHistoryStore } from '../stores/useHistoryStore'
 import { LineState, PresenceStatus } from '../types/swyx'
 import PhoneView from '../components/phone/PhoneView'
 import ContactsView from '../components/contacts/ContactsView'
@@ -89,6 +90,22 @@ export function App() {
       fetchPresence()
       // Polling alle 10 Sekunden für Presence-Updates (Status-Änderungen)
       presenceTimerRef.current = setInterval(fetchPresence, 10_000)
+
+      // Amtsvorwahl automatisch vom Server erkennen
+      window.swyxApi.getSystemInfo().then((info) => {
+        const sysInfo = info as { publicAccessPrefix?: string } | null
+        if (sysInfo?.publicAccessPrefix) {
+          const store = useSettingsStore.getState()
+          // Nur setzen wenn noch der Default ('0') oder leer
+          if (!store.trunkPrefix || store.trunkPrefix === '0') {
+            store.setTrunkPrefix(sysInfo.publicAccessPrefix)
+            store.setTrunkPrefixEnabled(true)
+          }
+        }
+      }).catch(() => {})
+
+      // Anrufhistorie vom COM-Server laden und mit lokalen Einträgen zusammenführen
+      useHistoryStore.getState().fetchHistory()
     } else {
       if (presenceTimerRef.current) {
         clearInterval(presenceTimerRef.current)

@@ -7,6 +7,9 @@ import {
   MicOff,
   ArrowRightLeft,
   Hash,
+  Circle,
+  Users,
+  PhoneForwarded,
 } from 'lucide-react'
 import { useCall } from '../../hooks/useCall'
 import { useLineStore } from '../../stores/useLineStore'
@@ -60,7 +63,9 @@ export function ActiveCallPanel() {
   const [isOnHold, setIsOnHold] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
   const [showDtmf, setShowDtmf] = useState(false)
-
+  const [isRecording, setIsRecording] = useState(false)
+  const [showForward, setShowForward] = useState(false)
+  const [forwardTarget, setForwardTarget] = useState('')
   const activeLine = lines.find((l) => l.id === selectedLineId)
   const isRinging = activeLine?.state === 'Ringing'
   const isDialing = activeLine?.state === 'Dialing' || activeLine?.state === 'Alerting'
@@ -74,6 +79,9 @@ export function ActiveCallPanel() {
     setElapsed(0)
     setIsMuted(false)
     setIsOnHold(false)
+    setIsRecording(false)
+    setShowForward(false)
+    setForwardTarget('')
   }, [selectedLineId])
 
   // Count up timer when call is active (not ringing or dialing)
@@ -107,6 +115,34 @@ export function ActiveCallPanel() {
     if (!activeLine) return
     hangup(activeLine.id)
   }, [activeLine, hangup])
+
+  const handleRecordToggle = useCallback(() => {
+    if (!activeLine) return
+    const lineNumber = activeLine.id
+    if (isRecording) {
+      window.swyxApi.stopRecording(lineNumber).catch(() => {})
+    } else {
+      window.swyxApi.startRecording(lineNumber).catch(() => {})
+    }
+    setIsRecording((v) => !v)
+  }, [activeLine, isRecording])
+
+  const handleConference = useCallback(() => {
+    if (!activeLine) return
+    window.swyxApi.createConference(activeLine.id).catch(() => {})
+  }, [activeLine])
+
+  const handleForwardCall = useCallback(() => {
+    if (!activeLine || !forwardTarget.trim()) return
+    window.swyxApi.forwardCall(activeLine.id, forwardTarget.trim()).catch(() => {})
+    setShowForward(false)
+    setForwardTarget('')
+  }, [activeLine, forwardTarget])
+
+  // Anzahl aktiver Leitungen (für Konferenz-Button)
+  const activeLineCount = lines.filter(
+    (l) => l.state !== 'Inactive' && l.state !== 'Terminated' && l.state !== 'Disabled'
+  ).length
 
   if (!isVisible || !activeLine) return null
 
@@ -150,8 +186,36 @@ export function ActiveCallPanel() {
         <TransferDialog lineId={activeLine.id} onClose={() => setShowTransfer(false)} />
       )}
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-3">
+      {/* Forward call inline input */}
+      {showForward && (
+        <div className="flex items-center gap-2 w-full px-1">
+          <input
+            type="text"
+            value={forwardTarget}
+            onChange={(e) => setForwardTarget(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleForwardCall()}
+            placeholder="Zielnummer…"
+            className="flex-1 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            autoFocus
+          />
+          <button
+            onClick={handleForwardCall}
+            disabled={!forwardTarget.trim()}
+            className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-400 disabled:opacity-40 text-white text-xs font-medium transition-colors"
+          >
+            Umleiten
+          </button>
+          <button
+            onClick={() => { setShowForward(false); setForwardTarget('') }}
+            className="px-2 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xs transition-colors"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Action buttons - Row 1: Primary controls */}
+      <div className="flex items-center gap-2 flex-wrap justify-center">
         <ActionButton onClick={handleHoldToggle} active={isOnHold} title={isOnHold ? 'Fortsetzen' : 'Halten'}>
           {isOnHold ? <Play size={18} /> : <Pause size={18} />}
           <span className="text-[10px] font-medium">{isOnHold ? 'Fortsetzen' : 'Halten'}</span>
@@ -162,10 +226,27 @@ export function ActiveCallPanel() {
           <span className="text-[10px] font-medium">{isMuted ? 'Ton ein' : 'Stumm'}</span>
         </ActionButton>
 
-        <ActionButton onClick={() => setShowTransfer(true)} title="Weiterleiten">
-          <ArrowRightLeft size={18} />
-          <span className="text-[10px] font-medium">Weiterl.</span>
+        <ActionButton onClick={handleRecordToggle} active={isRecording} title={isRecording ? 'Aufnahme stoppen' : 'Aufnahme starten'}>
+          <Circle size={18} className={isRecording ? 'fill-red-500 text-red-500 animate-pulse' : ''} />
+          <span className="text-[10px] font-medium">{isRecording ? 'Stopp' : 'Aufnahme'}</span>
         </ActionButton>
+
+        <ActionButton onClick={() => setShowTransfer(true)} title="Verbinden">
+          <ArrowRightLeft size={18} />
+          <span className="text-[10px] font-medium">Verbinden</span>
+        </ActionButton>
+
+        <ActionButton onClick={() => setShowForward(!showForward)} active={showForward} title="Umleiten">
+          <PhoneForwarded size={18} />
+          <span className="text-[10px] font-medium">Umleiten</span>
+        </ActionButton>
+
+        {activeLineCount >= 2 && (
+          <ActionButton onClick={handleConference} title="Konferenz starten">
+            <Users size={18} />
+            <span className="text-[10px] font-medium">Konferenz</span>
+          </ActionButton>
+        )}
 
         <ActionButton onClick={() => setShowDtmf(true)} title="DTMF">
           <Hash size={18} />

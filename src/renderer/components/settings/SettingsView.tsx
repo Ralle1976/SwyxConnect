@@ -19,6 +19,7 @@ import {
   Check,
   Server,
   RefreshCw,
+  Cpu,
 } from 'lucide-react'
 import { useSettingsStore, applyTheme } from '../../stores/useSettingsStore'
 
@@ -335,6 +336,10 @@ export default function SettingsView() {
   const [teamsLocalPresence, setTeamsLocalPresence] = useState<{
     availability: string; activity: string; source: string; isRunning: boolean
   } | null>(null)
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(null)
+  const [comAudioDevices, setComAudioDevices] = useState<Record<string, unknown> | null>(null)
+  const [comMicEnabled, setComMicEnabled] = useState<boolean | null>(null)
+  const [comSpeakerEnabled, setComSpeakerEnabled] = useState<boolean | null>(null)
 
   const enumerateDevices = useCallback(async () => {
     try {
@@ -417,6 +422,31 @@ export default function SettingsView() {
     })
     return () => unsub()
   }, [])
+
+  // SystemInfo + COM Audio Devices laden
+  useEffect(() => {
+    window.swyxApi.getSystemInfo().then((info) => {
+      if (info && typeof info === 'object') {
+        const si = info as Record<string, unknown>
+        setSystemInfo(si)
+        if (typeof si.microEnabled === 'boolean') setComMicEnabled(si.microEnabled)
+        if (typeof si.speakerEnabled === 'boolean') setComSpeakerEnabled(si.speakerEnabled)
+      }
+    }).catch(() => {})
+    window.swyxApi.getAudioDevices().then((devices) => {
+      if (devices && typeof devices === 'object') setComAudioDevices(devices as Record<string, unknown>)
+    }).catch(() => {})
+  }, [])
+
+  const handleComMicToggle = (enabled: boolean) => {
+    setComMicEnabled(enabled)
+    window.swyxApi.setMicro(enabled).catch(() => {})
+  }
+
+  const handleComSpeakerToggle = (enabled: boolean) => {
+    setComSpeakerEnabled(enabled)
+    window.swyxApi.setSpeaker(enabled).catch(() => {})
+  }
 
   const handleTeamsLogin = async () => {
     setTeamsLoggingIn(true)
@@ -763,6 +793,72 @@ export default function SettingsView() {
             )}
           </div>
 
+        </div>
+      </SectionCard>
+
+      {/* ─── Systeminformationen ──────────────────────────────────────────── */}
+      <SectionCard title="Systeminformationen" icon={<Cpu size={16} />}>
+        <div className="flex flex-col gap-3">
+          {systemInfo ? (
+            <>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
+                {[
+                  { label: 'Amtsvorwahl (Server)', value: systemInfo.publicAccessPrefix },
+                  { label: 'Vorwahl', value: systemInfo.areaCode },
+                  { label: 'Landesvorwahl', value: systemInfo.countryCode },
+                  { label: 'Server-Version', value: systemInfo.versionInfo },
+                  { label: 'Audio-Modus', value: systemInfo.audioMode },
+                  { label: 'CTI Master', value: typeof systemInfo.ctiMaster === 'boolean' ? (systemInfo.ctiMaster ? 'Ja' : 'Nein') : systemInfo.ctiMaster },
+                  { label: 'Server erreichbar', value: typeof systemInfo.serverUp === 'boolean' ? (systemInfo.serverUp ? 'Ja' : 'Nein') : systemInfo.serverUp },
+                  { label: 'HD-Audio', value: typeof systemInfo.hdAudio === 'boolean' ? (systemInfo.hdAudio ? 'Ja' : 'Nein') : systemInfo.hdAudio },
+                ].filter(row => row.value !== undefined && row.value !== null && row.value !== '').map((row) => (
+                  <div key={row.label} className="flex flex-col">
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">{row.label}</span>
+                    <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium font-mono">{String(row.value)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* COM Mikrofon/Lautsprecher Steuerung */}
+              {comMicEnabled !== null && (
+                <ToggleRow
+                  label="COM Mikrofon"
+                  description="Mikrofon über SwyxIt! COM-Schnittstelle aktivieren/deaktivieren"
+                  value={comMicEnabled}
+                  onChange={handleComMicToggle}
+                />
+              )}
+              {comSpeakerEnabled !== null && (
+                <ToggleRow
+                  label="COM Lautsprecher"
+                  description="Lautsprecher über SwyxIt! COM-Schnittstelle aktivieren/deaktivieren"
+                  value={comSpeakerEnabled}
+                  onChange={handleComSpeakerToggle}
+                />
+              )}
+
+              {/* COM Audio-Geräte */}
+              {comAudioDevices && (
+                <div className="rounded-lg border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
+                    COM Audio-Geräte
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    {Object.entries(comAudioDevices).map(([key, value]) => (
+                      <div key={key} className="flex items-center justify-between py-0.5">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-400">{key}</span>
+                        <span className="text-xs text-zinc-700 dark:text-zinc-300 font-mono">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+              Systeminformationen werden geladen… (Bridge muss verbunden sein)
+            </p>
+          )}
         </div>
       </SectionCard>
 
