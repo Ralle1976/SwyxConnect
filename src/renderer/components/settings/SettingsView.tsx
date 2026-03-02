@@ -16,12 +16,7 @@ import {
   PanelLeftOpen,
   Play,
   Square,
-  Cloud,
-  WifiOff,
   Check,
-  Circle,
-  Link,
-  Unlink,
   Server,
   RefreshCw,
 } from 'lucide-react'
@@ -257,6 +252,26 @@ function AudioTestButton({ type }: { type: 'speaker' | 'mic' }) {
   )
 }
 
+function getAvailabilityLabel(availability: string): { label: string; colorClass: string } {
+  switch (availability) {
+    case 'Available':
+    case 'AvailableIdle':
+      return { label: 'Verfügbar', colorClass: 'text-emerald-500 dark:text-emerald-400' }
+    case 'Busy':
+    case 'BusyIdle':
+      return { label: 'Beschäftigt', colorClass: 'text-red-500 dark:text-red-400' }
+    case 'DoNotDisturb':
+      return { label: 'Nicht stören', colorClass: 'text-red-500 dark:text-red-400' }
+    case 'BeRightBack':
+    case 'Away':
+      return { label: 'Abwesend', colorClass: 'text-amber-500 dark:text-amber-400' }
+    case 'Offline':
+      return { label: 'Offline', colorClass: 'text-zinc-400 dark:text-zinc-500' }
+    default:
+      return { label: 'Unbekannt', colorClass: 'text-zinc-400 dark:text-zinc-500' }
+  }
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────────────────────────
 
 export default function SettingsView() {
@@ -270,8 +285,6 @@ export default function SettingsView() {
     audioInputVolume,
     audioOutputVolume,
     numberOfLines,
-    teamsEnabled,
-    teamsIntegrationMode,
     setTheme,
     toggleSidebar,
     setStartMinimized,
@@ -281,21 +294,17 @@ export default function SettingsView() {
     setAudioInputVolume,
     setAudioOutputVolume,
     setNumberOfLines,
-    setTeamsEnabled,
-    setTeamsIntegrationMode,
   } = useSettingsStore()
 
   // Audio-Geräte enumerieren
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
-  const [teamsLocalStatus, setTeamsLocalStatus] = useState<{
-    connected: boolean
-    availability: string
-    currentUser: string | null
-    clientVersion: string | null
+  const [teamsGraphStatus, setTeamsGraphStatus] = useState<{
+    loggedIn: boolean
+    userName: string | null
+    presence: { availability: string; activity: string } | null
   } | null>(null)
-  const [teamsConnecting, setTeamsConnecting] = useState(false)
-  const [azureClientId, setAzureClientId] = useState('')
+  const [teamsLoggingIn, setTeamsLoggingIn] = useState(false)
   const [connectionInfo, setConnectionInfo] = useState<{
     connected: boolean
     serverName: string | null
@@ -345,35 +354,47 @@ export default function SettingsView() {
     setTheme(t)
     applyTheme(t)
   }
-  // Rückwärtskompatibilität: teamsEnabled mit Integrationsmodus synchron halten
+  // Teams Graph — Status beim Start laden
   useEffect(() => {
-    setTeamsEnabled(teamsIntegrationMode !== 'off')
-  }, [teamsIntegrationMode, setTeamsEnabled])
+    window.swyxApi.teamsGraphGetStatus().then(setTeamsGraphStatus).catch(() => {})
+  }, [])
 
-  const handleTeamsConnect = async () => {
-    setTeamsConnecting(true)
+  // Teams Graph — Echtzeit-Events abonnieren
+  useEffect(() => {
+    const unsub1 = window.swyxApi.onTeamsGraphStateChanged((state) => {
+      setTeamsGraphStatus(prev =>
+        prev
+          ? { ...prev, ...state }
+          : { loggedIn: state.loggedIn, userName: state.userName, presence: null }
+      )
+    })
+    const unsub2 = window.swyxApi.onTeamsGraphPresenceChanged((presence) => {
+      setTeamsGraphStatus(prev => (prev ? { ...prev, presence } : null))
+    })
+    return () => {
+      unsub1()
+      unsub2()
+    }
+  }, [])
+
+  const handleTeamsLogin = async () => {
+    setTeamsLoggingIn(true)
     try {
-      const api = window.swyxApi
-      if (api && 'teamsLocalConnect' in api) {
-        const result = await (api as Record<string, (...args: unknown[]) => unknown>).teamsLocalConnect()
-        if (result) setTeamsLocalStatus(result as typeof teamsLocalStatus)
+      const result = await window.swyxApi.teamsGraphLogin()
+      if (result.ok) {
+        const status = await window.swyxApi.teamsGraphGetStatus()
+        setTeamsGraphStatus(status)
+        await window.swyxApi.teamsGraphStartPolling()
       }
     } catch {
       // ignore
     }
-    setTeamsConnecting(false)
+    setTeamsLoggingIn(false)
   }
 
-  const handleTeamsDisconnect = async () => {
-    try {
-      const api = window.swyxApi
-      if (api && 'teamsLocalDisconnect' in api) {
-        await (api as Record<string, (...args: unknown[]) => unknown>).teamsLocalDisconnect()
-        setTeamsLocalStatus(null)
-      }
-    } catch {
-      // ignore
-    }
+  const handleTeamsLogout = async () => {
+    await window.swyxApi.teamsGraphLogout()
+    setTeamsGraphStatus({ loggedIn: false, userName: null, presence: null })
   }
 
   return (
@@ -520,191 +541,81 @@ export default function SettingsView() {
       <SectionCard title="Microsoft Teams" icon={<Wifi size={16} />}>
         <div className="flex flex-col gap-4">
 
-          {/* Integrationsmodus — Auswahl-Karten */}
-          <div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2.5">Integrationsmodus</p>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                {
-                  id: 'local' as const,
-                  icon: <Monitor size={15} />,
-                  label: 'Lokal (COM)',
-                  desc: 'Direkte Verbindung über Office-Schnittstelle — kein Azure nötig',
-                },
-                {
-                  id: 'graph' as const,
-                  icon: <Cloud size={15} />,
-                  label: 'Microsoft Graph',
-                  desc: 'Cloud-basierte Verbindung — Azure App-ID erforderlich',
-                },
-                {
-                  id: 'off' as const,
-                  icon: <WifiOff size={15} />,
-                  label: 'Deaktiviert',
-                  desc: 'Teams-Integration ist ausgeschaltet',
-                },
-              ] as const).map(({ id, icon, label, desc }) => {
-                const active = teamsIntegrationMode === id
-                return (
-                  <button
-                    key={id}
-                    onClick={() => setTeamsIntegrationMode(id)}
-                    className={[
-                      'flex flex-col gap-1.5 p-3 rounded-lg border text-left transition-all',
-                      active
-                        ? 'ring-2 ring-blue-500 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30'
-                        : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800',
-                    ].join(' ')}
-                  >
-                    <span className={active ? 'text-blue-500' : 'text-zinc-400 dark:text-zinc-500'}>
-                      {icon}
-                    </span>
-                    <span
-                      className={`text-xs font-semibold ${
-                        active ? 'text-blue-700 dark:text-blue-300' : 'text-zinc-700 dark:text-zinc-300'
-                      }`}
-                    >
-                      {label}
-                    </span>
-                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-tight">
-                      {desc}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* ── Lokal (COM) — Inhalt ── */}
-          {teamsIntegrationMode === 'local' && (
-            <div className="flex flex-col gap-3">
-
-              {/* Verbindungsstatus */}
-              <div className="flex items-center justify-between rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2.5">
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                      teamsLocalStatus?.connected
-                        ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
-                        : 'bg-zinc-300 dark:bg-zinc-600'
-                    }`}
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      {teamsLocalStatus?.connected
-                        ? (teamsLocalStatus.currentUser ?? 'Verbunden')
-                        : 'Nicht verbunden'}
-                    </span>
-                    {teamsLocalStatus?.connected && teamsLocalStatus.availability && (
-                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-                        {teamsLocalStatus.availability}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {teamsLocalStatus?.clientVersion && (
-                  <span
-                    className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                      teamsLocalStatus.clientVersion.toLowerCase().includes('new')
-                        ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
-                        : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
-                    }`}
-                  >
-                    {teamsLocalStatus.clientVersion}
+          {/* Status-Karte */}
+          <div className="flex items-center justify-between rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                  !teamsGraphStatus?.loggedIn
+                    ? 'bg-zinc-300 dark:bg-zinc-600'
+                    : ['Busy', 'BusyIdle', 'DoNotDisturb'].includes(teamsGraphStatus?.presence?.availability ?? '')
+                      ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.4)]'
+                      : ['BeRightBack', 'Away'].includes(teamsGraphStatus?.presence?.availability ?? '')
+                        ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]'
+                        : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
+                }`}
+              />
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  {teamsGraphStatus?.loggedIn
+                    ? (teamsGraphStatus.userName ?? 'Angemeldet')
+                    : 'Nicht angemeldet'}
+                </span>
+                {teamsGraphStatus?.loggedIn && teamsGraphStatus.presence && (
+                  <span className={`text-[10px] ${getAvailabilityLabel(teamsGraphStatus.presence.availability).colorClass}`}>
+                    {getAvailabilityLabel(teamsGraphStatus.presence.availability).label}
                   </span>
                 )}
               </div>
+            </div>
+            {teamsGraphStatus?.loggedIn && teamsGraphStatus.presence && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400">
+                {teamsGraphStatus.presence.activity}
+              </span>
+            )}
+          </div>
 
-              {/* Verbinden / Trennen Button */}
-              <button
-                onClick={teamsLocalStatus?.connected ? handleTeamsDisconnect : handleTeamsConnect}
-                disabled={teamsConnecting}
-                className={[
-                  'flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all',
-                  teamsLocalStatus?.connected
-                    ? 'border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30'
-                    : 'bg-blue-500 hover:bg-blue-600 text-white',
-                  teamsConnecting ? 'opacity-50 cursor-not-allowed' : '',
-                ].join(' ')}
-              >
-                {teamsConnecting
-                  ? <Circle size={12} className="animate-spin" />
-                  : teamsLocalStatus?.connected
-                    ? <Unlink size={12} />
-                    : <Link size={12} />}
-                {teamsConnecting
-                  ? 'Verbinde...'
-                  : teamsLocalStatus?.connected
-                    ? 'Verbindung trennen'
-                    : 'Mit Teams verbinden'}
-              </button>
+          {/* Login / Logout Button */}
+          {teamsGraphStatus?.loggedIn ? (
+            <button
+              onClick={handleTeamsLogout}
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+            >
+              Abmelden
+            </button>
+          ) : (
+            <button
+              onClick={handleTeamsLogin}
+              disabled={teamsLoggingIn}
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+            >
+              {teamsLoggingIn ? (
+                <RefreshCw size={12} className="animate-spin" />
+              ) : (
+                <Wifi size={12} />
+              )}
+              {teamsLoggingIn ? 'Wird angemeldet...' : 'Microsoft anmelden'}
+            </button>
+          )}
 
-              {/* Funktions-Checkliste */}
-              <div className="rounded-lg border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
-                <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
-                  Funktionsumfang
-                </p>
-                <div className="flex flex-col gap-1.5">
-                  {[
-                    'Echtzeit-Präsenz Synchronisation',
-                    'Eingehende Anrufe erkennen',
-                    'Anrufe über Teams starten',
-                    'Status setzen (nur New Teams)',
-                  ].map((feature) => (
-                    <div key={feature} className="flex items-center gap-2">
-                      <Check size={11} className="text-emerald-500 flex-shrink-0" />
-                      <span className="text-xs text-zinc-600 dark:text-zinc-400">{feature}</span>
-                    </div>
-                  ))}
+          {/* Funktions-Checkliste */}
+          <div className="rounded-lg border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
+              Funktionsumfang
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {[
+                'Echtzeit-Präsenz Synchronisation',
+                'Microsoft 365 Cloud-Verbindung',
+                'Automatische Token-Erneuerung',
+              ].map((feature) => (
+                <div key={feature} className="flex items-center gap-2">
+                  <Check size={11} className="text-emerald-500 flex-shrink-0" />
+                  <span className="text-xs text-zinc-600 dark:text-zinc-400">{feature}</span>
                 </div>
-              </div>
-
-              {/* Info-Box */}
-              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 px-3 py-2.5">
-                <p className="text-[11px] text-blue-700 dark:text-blue-400 leading-relaxed">
-                  Die lokale Integration nutzt die Office UC COM-Schnittstelle. Teams muss auf diesem PC installiert und gestartet sein.
-                </p>
-              </div>
-
+              ))}
             </div>
-          )}
-
-          {/* ── Microsoft Graph — Inhalt ── */}
-          {teamsIntegrationMode === 'graph' && (
-            <div className="flex flex-col gap-3">
-              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2.5">
-                <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
-                  Erfordert eine Azure App-ID (Client ID). Ihr Administrator muss diese in Azure Active Directory erstellen.
-                </p>
-              </div>
-              <input
-                type="text"
-                placeholder="Azure App-ID (Client ID)"
-                value={azureClientId}
-                onChange={(e) => setAzureClientId(e.target.value)}
-                className="w-full text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-colors"
-              />
-              <button
-                disabled={!azureClientId.trim()}
-                className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white"
-              >
-                <Cloud size={12} />
-                Verbinden
-              </button>
-              <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-relaxed">
-                Wird als Fallback verwendet, wenn die lokale Verbindung nicht verfügbar ist.
-              </p>
-            </div>
-          )}
-
-          {/* ── Deaktiviert — Inhalt ── */}
-          {teamsIntegrationMode === 'off' && (
-            <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800 px-3 py-2.5">
-              <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-relaxed">
-                Die Teams-Integration ist deaktiviert. Swyx-Präsenz wird nicht mit Teams synchronisiert.
-              </p>
-            </div>
-          )}
+          </div>
 
         </div>
       </SectionCard>

@@ -48,6 +48,17 @@ export const IPC_CHANNELS = {
   TEAMS_LOCAL_INCOMING_CALL: 'swyx:teamsLocal:incomingCall',
   TEAMS_LOCAL_STATE_CHANGED: 'swyx:teamsLocal:stateChanged',
   TEAMS_LOCAL_ERROR: 'swyx:teamsLocal:error',
+  // TeamsGraph channels (Graph API)
+  TEAMS_GRAPH_LOGIN: 'swyx:teamsGraph:login',
+  TEAMS_GRAPH_LOGOUT: 'swyx:teamsGraph:logout',
+  TEAMS_GRAPH_GET_STATUS: 'swyx:teamsGraph:getStatus',
+  TEAMS_GRAPH_START_POLLING: 'swyx:teamsGraph:startPolling',
+  TEAMS_GRAPH_STOP_POLLING: 'swyx:teamsGraph:stopPolling',
+  // TeamsGraph events (main → renderer)
+  TEAMS_GRAPH_PRESENCE_CHANGED: 'swyx:teamsGraph:presenceChanged',
+  TEAMS_GRAPH_STATE_CHANGED: 'swyx:teamsGraph:stateChanged',
+  TEAMS_GRAPH_AUTH_REQUIRED: 'swyx:teamsGraph:authRequired',
+  TEAMS_GRAPH_ERROR: 'swyx:teamsGraph:error',
 } as const;
 
 export type IpcChannelKey = keyof typeof IPC_CHANNELS;

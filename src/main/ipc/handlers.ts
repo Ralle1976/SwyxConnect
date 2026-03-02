@@ -14,6 +14,7 @@ import {
 import { TeamsLocalService } from '../services/TeamsLocalService';
 import { BridgeManager } from '../bridge/BridgeManager';
 import { SettingsStore } from '../services/SettingsStore';
+import { TeamsGraphService } from '../services/TeamsGraphService';
 
 export function registerIpcHandlers(
   bridgeManager: BridgeManager,
@@ -108,6 +109,7 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.GET_CONNECTION_INFO, async () => {
     return bridgeManager.sendRequest('getConnectionInfo');
   });
+
 
   ipcMain.handle(IPC_CHANNELS.MUTE, async (_event, lineId: number) => {
     return bridgeManager.sendRequest('mute', { lineId });
@@ -206,5 +208,48 @@ export function registerTeamsLocalIpcHandlers(
   });
   teamsLocalService.on('stateChanged', (status) => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_LOCAL_STATE_CHANGED, status);
+  });
+}
+
+export function registerTeamsGraphIpcHandlers(
+  teamsGraphService: TeamsGraphService,
+  getMainWindow: () => BrowserWindow | null
+): void {
+  ipcMain.handle(IPC_CHANNELS.TEAMS_GRAPH_LOGIN, async () => {
+    return teamsGraphService.login();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_GRAPH_LOGOUT, async () => {
+    return teamsGraphService.logout();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_GRAPH_GET_STATUS, async () => {
+    return {
+      loggedIn: teamsGraphService.isLoggedIn,
+      userName: teamsGraphService.currentUser,
+      presence: await teamsGraphService.getPresence(),
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_GRAPH_START_POLLING, async () => {
+    await teamsGraphService.startPolling();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TEAMS_GRAPH_STOP_POLLING, () => {
+    teamsGraphService.stopPolling();
+  });
+
+  // Forward TeamsGraph events to renderer
+  teamsGraphService.on('presenceChanged', (presence) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_GRAPH_PRESENCE_CHANGED, presence);
+  });
+  teamsGraphService.on('stateChanged', (state) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_GRAPH_STATE_CHANGED, state);
+  });
+  teamsGraphService.on('authRequired', () => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_GRAPH_AUTH_REQUIRED);
+  });
+  teamsGraphService.on('error', (err) => {
+    getMainWindow()?.webContents.send(IPC_CHANNELS.TEAMS_GRAPH_ERROR, err);
   });
 }

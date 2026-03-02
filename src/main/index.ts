@@ -3,18 +3,20 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { BridgeManager } from './bridge/BridgeManager'
 import { TrayIcon } from './tray'
-import { registerIpcHandlers, registerTeamsLocalIpcHandlers } from './ipc/handlers'
+import { registerIpcHandlers, registerTeamsLocalIpcHandlers, registerTeamsGraphIpcHandlers } from './ipc/handlers'
 import { SettingsStore } from './services/SettingsStore'
 import { NotificationService } from './services/NotificationService'
 import { BridgeState, CallDetails, LineState } from '../shared/types'
 import { IPC_CHANNELS } from '../shared/constants'
 import { TeamsLocalService } from './services/TeamsLocalService'
+import { TeamsGraphService } from './services/TeamsGraphService'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 const bridgeManager = new BridgeManager()
 const settingsStore = new SettingsStore()
 const teamsLocalService = new TeamsLocalService(bridgeManager)
+const teamsGraphService = new TeamsGraphService()
 let trayIcon: TrayIcon | null = null
 
 function getMainWindow(): BrowserWindow | null {
@@ -100,6 +102,7 @@ app.on('before-quit', () => {
   isQuitting = true
   bridgeManager.stop()
   teamsLocalService.stop()
+  teamsGraphService.stop()
   settingsStore.flush()
 })
 
@@ -107,6 +110,7 @@ app.on('before-quit', () => {
 // as soon as the renderer makes its first invoke calls.
 registerIpcHandlers(bridgeManager, settingsStore, getMainWindow)
 registerTeamsLocalIpcHandlers(teamsLocalService, getMainWindow)
+registerTeamsGraphIpcHandlers(teamsGraphService, getMainWindow)
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.ralle197.swyit')
@@ -153,6 +157,18 @@ app.whenReady().then(() => {
   })
 
   bridgeManager.start()
+
+  // Initialize TeamsGraphService (restore cached session)
+  teamsGraphService.initialize().then(() => {
+    if (teamsGraphService.isLoggedIn) {
+      console.log('[Main] TeamsGraphService: restored cached session, starting presence polling')
+      teamsGraphService.startPolling().catch((err) => {
+        console.error('[Main] TeamsGraph polling start failed:', err)
+      })
+    }
+  }).catch((err) => {
+    console.error('[Main] TeamsGraphService init failed:', err)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

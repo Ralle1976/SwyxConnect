@@ -140,6 +140,39 @@ const swyxApi = {
     ipcRenderer.on(IPC_CHANNELS.TEAMS_LOCAL_INCOMING_CALL, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_LOCAL_INCOMING_CALL, handler)
   },
+  // --- TeamsGraph (Microsoft Graph API) ---
+  teamsGraphLogin: (): Promise<{ ok: boolean; userName?: string; error?: string }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_GRAPH_LOGIN),
+  teamsGraphLogout: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_GRAPH_LOGOUT),
+  teamsGraphGetStatus: (): Promise<{ loggedIn: boolean; userName: string | null; presence: { availability: string; activity: string } | null }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_GRAPH_GET_STATUS),
+  teamsGraphStartPolling: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_GRAPH_START_POLLING),
+  teamsGraphStopPolling: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEAMS_GRAPH_STOP_POLLING),
+
+  // TeamsGraph event listeners
+  onTeamsGraphPresenceChanged: (callback: (presence: { availability: string; activity: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, presence: { availability: string; activity: string }): void => callback(presence)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_GRAPH_PRESENCE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_GRAPH_PRESENCE_CHANGED, handler)
+  },
+  onTeamsGraphStateChanged: (callback: (state: { loggedIn: boolean; userName: string | null }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: { loggedIn: boolean; userName: string | null }): void => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_GRAPH_STATE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_GRAPH_STATE_CHANGED, handler)
+  },
+  onTeamsGraphAuthRequired: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_GRAPH_AUTH_REQUIRED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_GRAPH_AUTH_REQUIRED, handler)
+  },
+  onTeamsGraphError: (callback: (err: { message: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, err: { message: string }): void => callback(err)
+    ipcRenderer.on(IPC_CHANNELS.TEAMS_GRAPH_ERROR, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_GRAPH_ERROR, handler)
+  },
 } as const
 
 // ─── Expose to Renderer ───────────────────────────────────────────────────────

@@ -13,15 +13,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Interop.UIAutomationClient" Version="10.19041.0" />
     <PackageReference Include="Swyx.Client.ClmgrAPI" Version="*" />
     <PackageReference Include="System.Text.Json" Version="8.*" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="Microsoft.Office.Uc">
-      <HintPath>lib\Microsoft.Office.Uc.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
 </Project>

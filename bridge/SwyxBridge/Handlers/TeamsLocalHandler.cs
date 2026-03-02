@@ -1,28 +1,23 @@
 using System.Text.Json;
 using Microsoft.Win32;
 using SwyxBridge.JsonRpc;
-using SwyxBridge.Teams;
 using SwyxBridge.Utils;
 
 namespace SwyxBridge.Handlers;
 
 /// <summary>
-/// Handles Teams Local integration via the TeamsConnector library.
-/// Provides JSON-RPC methods for connecting to and controlling Microsoft Teams.
-/// 
-/// Methods:
-///   teams.local.connect         — Connect to running Teams instance
-///   teams.local.disconnect      — Disconnect and cleanup
-///   teams.local.getStatus       — Get current connection + presence status
-///   teams.local.getAvailability — Get current availability enum value
-///   teams.local.setAvailability — Set availability (New Teams 2023 only)
-///   teams.local.makeCall        — Initiate an audio call
-///   teams.local.getAccounts     — Detect Teams installations from registry
+/// Lightweight Teams handler — nur Registry-Check für Teams-Installationen.
+/// Die eigentliche Teams-Integration (Graph API, Presence-Polling) läuft
+/// komplett im TypeScript/Electron-Layer via @azure/msal-node.
+///
+/// C#-Bridge stellt nur noch bereit:
+///   teams.local.getAccounts — Erkennt installierte Teams-Versionen via Registry
+///   teams.local.getStatus   — Gibt "not_managed" zurück (wird von TS verwaltet)
+///   teams.local.connect     — Gibt Hinweis zurück, dass Graph API in TS läuft
+///   teams.local.disconnect  — No-op
 /// </summary>
 public sealed class TeamsLocalHandler
 {
-    private TeamsClient? _client;
-
     public bool CanHandle(string method) => method switch
     {
         "teams.local.connect" or
@@ -41,12 +36,12 @@ public sealed class TeamsLocalHandler
         {
             object? result = req.Method switch
             {
-                "teams.local.connect" => Connect(),
-                "teams.local.disconnect" => Disconnect(),
-                "teams.local.getStatus" => GetStatus(),
-                "teams.local.getAvailability" => GetAvailability(),
-                "teams.local.setAvailability" => SetAvailability(req.Params),
-                "teams.local.makeCall" => MakeCall(req.Params),
+                "teams.local.connect" => new { ok = false, error = "Teams integration is managed by the Electron app via Microsoft Graph API." },
+                "teams.local.disconnect" => new { ok = true },
+                "teams.local.getStatus" => new { connected = false, availability = "Unknown", managedBy = "electron-graph-api" },
+                "teams.local.getAvailability" => new { availability = "Unknown", managedBy = "electron-graph-api" },
+                "teams.local.setAvailability" => new { ok = false, error = "Use Graph API via Electron" },
+                "teams.local.makeCall" => new { ok = false, error = "Use Graph API via Electron" },
                 "teams.local.getAccounts" => GetAccounts(),
                 _ => null
             };
@@ -62,166 +57,10 @@ public sealed class TeamsLocalHandler
         }
     }
 
-    // ─── CONNECT ─────────────────────────────────────────────────────────────
-
-    private object Connect()
-    {
-        if (_client != null)
-        {
-            Logging.Info("TeamsLocalHandler: Already connected, reusing existing client.");
-            return new { ok = true, message = "Already connected", currentUser = _client.CurrentUser };
-        }
-
-        try
-        {
-            _client = new TeamsClient();
-            _client.CreatePresenceSubscription();
-
-            // Wire up events to emit JSON-RPC notifications
-            _client.PresenceChanged += OnPresenceChanged;
-            _client.IncomingCall += OnIncomingCall;
-
-            Logging.Info($"TeamsLocalHandler: Connected. User={_client.CurrentUser}");
-
-            // Emit initial state
-            var availability = _client.GetAvailability();
-            var activity = _client.GetActivity();
-            JsonRpcEmitter.EmitEvent("teamsLocalPresenceChanged", new
-            {
-                availability = availability.ToString(),
-                availabilityCode = (int)availability,
-                activity
-            });
-
-            return new
-            {
-                ok = true,
-                connected = true,
-                currentUser = _client.CurrentUser,
-                availability = availability.ToString(),
-                availabilityCode = (int)availability,
-                activity
-            };
-        }
-        catch (TeamsConnectorException ex)
-        {
-            Logging.Warn($"TeamsLocalHandler: Connect failed: {ex.Message}");
-            _client = null;
-            return new { ok = false, error = ex.Message };
-        }
-    }
-
-    // ─── DISCONNECT ──────────────────────────────────────────────────────────
-
-    private object Disconnect()
-    {
-        if (_client == null)
-            return new { ok = true, message = "Not connected" };
-
-        _client.PresenceChanged -= OnPresenceChanged;
-        _client.IncomingCall -= OnIncomingCall;
-        _client.Dispose();
-        _client = null;
-
-        Logging.Info("TeamsLocalHandler: Disconnected.");
-        return new { ok = true };
-    }
-
-    // ─── GET STATUS ──────────────────────────────────────────────────────────
-
-    private object GetStatus()
-    {
-        if (_client == null || !_client.IsConnected)
-        {
-            return new
-            {
-                connected = false,
-                availability = "Unknown",
-                availabilityCode = 0,
-                activity = "Unknown",
-                currentUser = (string?)null
-            };
-        }
-
-        var availability = _client.GetAvailability();
-        var activity = _client.GetActivity();
-
-        return new
-        {
-            connected = true,
-            availability = availability.ToString(),
-            availabilityCode = (int)availability,
-            activity,
-            currentUser = _client.CurrentUser
-        };
-    }
-
-    // ─── GET AVAILABILITY ────────────────────────────────────────────────────
-
-    private object GetAvailability()
-    {
-        if (_client == null)
-            return new { availability = "Unknown", availabilityCode = 0 };
-
-        var availability = _client.GetAvailability();
-        return new
-        {
-            availability = availability.ToString(),
-            availabilityCode = (int)availability
-        };
-    }
-
-    // ─── SET AVAILABILITY ────────────────────────────────────────────────────
-
-    private object SetAvailability(JsonElement? p)
-    {
-        if (_client == null)
-            return new { ok = false, error = "Not connected" };
-
-        if (p == null)
-            return new { ok = false, error = "Missing parameters" };
-
-        Availability target = Availability.Available;
-        if (p.Value.TryGetProperty("availability", out var availProp))
-        {
-            string availStr = availProp.GetString() ?? "Available";
-            if (!Enum.TryParse<Availability>(availStr, ignoreCase: true, out target))
-            {
-                // Try numeric value
-                if (availProp.TryGetInt32(out int code))
-                    target = (Availability)code;
-            }
-        }
-
-        bool success = _client.SetAvailability(target);
-        return new { ok = success, availability = target.ToString() };
-    }
-
-    // ─── MAKE CALL ───────────────────────────────────────────────────────────
-
-    private object MakeCall(JsonElement? p)
-    {
-        if (_client == null)
-            return new { ok = false, error = "Not connected" };
-
-        if (p == null)
-            return new { ok = false, error = "Missing parameters" };
-
-        string phoneNumber = "";
-        if (p.Value.TryGetProperty("phoneNumber", out var phoneProp))
-            phoneNumber = phoneProp.GetString() ?? "";
-        else if (p.Value.TryGetProperty("number", out var numProp))
-            phoneNumber = numProp.GetString() ?? "";
-
-        if (string.IsNullOrWhiteSpace(phoneNumber))
-            return new { ok = false, error = "phoneNumber is required" };
-
-        bool success = _client.MakeCall(phoneNumber);
-        return new { ok = success, phoneNumber };
-    }
-
-    // ─── GET ACCOUNTS ────────────────────────────────────────────────────────
-
+    /// <summary>
+    /// Erkennt installierte Teams-Versionen via Registry.
+    /// Prüft HKCU\Software\IM Providers\{Teams|MsTeams}
+    /// </summary>
     private object GetAccounts()
     {
         var accounts = new List<object>();
@@ -262,27 +101,5 @@ public sealed class TeamsLocalHandler
         }
 
         return new { accounts };
-    }
-
-    // ─── EVENT HANDLERS ──────────────────────────────────────────────────────
-
-    private void OnPresenceChanged(object? sender, PresenceChangedEventArgs e)
-    {
-        Logging.Info($"TeamsLocalHandler: Presence changed → {e.Availability} / {e.Activity}");
-        JsonRpcEmitter.EmitEvent("teamsLocalPresenceChanged", new
-        {
-            availability = e.Availability.ToString(),
-            availabilityCode = (int)e.Availability,
-            activity = e.Activity
-        });
-    }
-
-    private void OnIncomingCall(object? sender, IncomingCallEventArgs e)
-    {
-        Logging.Info($"TeamsLocalHandler: Incoming call from {e.PhoneNumber}");
-        JsonRpcEmitter.EmitEvent("teamsLocalIncomingCall", new
-        {
-            phoneNumber = e.PhoneNumber
-        });
     }
 }

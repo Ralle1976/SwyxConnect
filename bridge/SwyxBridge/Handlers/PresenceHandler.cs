@@ -34,7 +34,7 @@ public sealed class PresenceHandler
 
     public bool CanHandle(string method) => method switch
     {
-        "getPresence" or "setPresence" or "getColleaguePresence" or "getConnectionInfo" => true,
+        "getPresence" or "setPresence" or "getColleaguePresence" or "getConnectionInfo" or "debugCom" => true,
         _ => false
     };
 
@@ -48,6 +48,7 @@ public sealed class PresenceHandler
                 "setPresence" => SetOwnPresence(req.Params),
                 "getColleaguePresence" => GetColleaguePresence(),
                 "getConnectionInfo" => GetConnectionInfo(),
+                "debugCom" => DebugCom(),
                 _ => null
             };
 
@@ -546,7 +547,8 @@ public sealed class PresenceHandler
 
     /// <summary>
     /// Liest Verbindungsinformationen vom CLMgr COM-Objekt.
-    /// Zeigt Server, Benutzer, Nebenstelle und Version an.
+    /// Verwendet die korrekten COM-Dispatch-Property-Namen aus der Interop-TLB:
+    ///   DispGetCurrentServer, DispGetCurrentUser, DispIsLoggedIn, DispGetExtension(i)
     /// </summary>
     private object GetConnectionInfo()
     {
@@ -568,22 +570,44 @@ public sealed class PresenceHandler
         string? version = null;
         bool isRegistered = false;
 
-        try { serverName = (string?)com.DispServerName; }
-        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispServerName: {ex.Message}"); }
+        // CLMgr COM properties (verifiziert via Interop.CLMgr.dll TLB-Analyse):
+        // DispGetCurrentServer → String
+        // DispGetCurrentUser → String
+        // DispIsLoggedIn → Int32
+        // DispGetExtension(Int32 iIndex) → String
+        // DispNumberOfExtensions → Int32
 
-        try { userName = (string?)com.DispUserName; }
-        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispUserName: {ex.Message}"); }
+        try { serverName = (string)com.DispGetCurrentServer; }
+        catch (Exception ex) { Logging.Warn($"GetConnectionInfo: DispGetCurrentServer: {ex.Message}"); }
 
-        try { ownNumber = (string?)com.DispOwnNumber; }
-        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispOwnNumber: {ex.Message}"); }
+        try { userName = (string)com.DispGetCurrentUser; }
+        catch (Exception ex) { Logging.Warn($"GetConnectionInfo: DispGetCurrentUser: {ex.Message}"); }
 
-        try { version = (string?)com.DispVersion; }
-        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispVersion: {ex.Message}"); }
+        try { isRegistered = (int)com.DispIsLoggedIn != 0; }
+        catch (Exception ex) { Logging.Warn($"GetConnectionInfo: DispIsLoggedIn: {ex.Message}"); }
 
-        try { isRegistered = (bool)com.DispIsRegistered; }
-        catch (Exception ex) { Logging.Warn($"PresenceHandler: DispIsRegistered: {ex.Message}"); }
+        // Eigene Nebenstelle: erste Extension
+        try
+        {
+            int numExt = (int)com.DispNumberOfExtensions;
+            if (numExt > 0)
+                ownNumber = (string)com.DispGetExtension(0);
+        }
+        catch (Exception ex) { Logging.Warn($"GetConnectionInfo: DispGetExtension: {ex.Message}"); }
 
-        Logging.Info($"PresenceHandler: GetConnectionInfo → Server={serverName}, User={userName}, Nr={ownNumber}, Ver={version}, Reg={isRegistered}");
+        // Version aus DispClientConfig lesen (ClientConfig hat get_Version)
+        try
+        {
+            dynamic cfg = com.DispClientConfig;
+            if (cfg != null)
+            {
+                try { version = (string)cfg.Version; }
+                catch { /* Version nicht verfügbar auf DispClientConfig */ }
+            }
+        }
+        catch (Exception ex) { Logging.Warn($"GetConnectionInfo: DispClientConfig: {ex.Message}"); }
+
+        Logging.Info($"PresenceHandler: GetConnectionInfo → Server={serverName}, User={userName}, Nr={ownNumber}, Ver={version}, LoggedIn={isRegistered}");
 
         return new
         {
@@ -594,5 +618,55 @@ public sealed class PresenceHandler
             version,
             isRegistered
         };
+    }
+
+
+    /// <summary>
+    /// Debug: Listet alle verfügbaren COM-Properties auf dem CLMgr-Objekt auf.
+    /// </summary>
+    private object DebugCom()
+    {
+        var com = _connector.GetCom();
+        if (com == null) return new { error = "COM not connected" };
+
+        var results = new Dictionary<string, string>();
+        var type = ((object)com).GetType();
+
+        // Liste alle Properties des COM-Objekts
+        foreach (var prop in type.GetProperties())
+        {
+            try
+            {
+                var val = prop.GetValue(com);
+                results[prop.Name] = val?.ToString() ?? "null";
+            }
+            catch (Exception ex)
+            {
+                results[prop.Name] = $"ERROR: {ex.Message}";
+            }
+        }
+
+        // Versuche auch bekannte Dispatch-Methoden
+        string[] tryProps = { "DispServerName", "DispUserName", "DispOwnNumber", "DispVersion", 
+            "DispIsRegistered", "DispClientConfig", "DispNumberOfLines", "DispSelectedLineNumber",
+            "ServerName", "UserName", "OwnNumber", "IsRegistered",
+            "DispLoginName", "DispOwnPhoneNumber", "DispClientVersion" };
+
+        foreach (var pn in tryProps)
+        {
+            if (results.ContainsKey(pn)) continue;
+            try
+            {
+                var val = type.InvokeMember(pn, System.Reflection.BindingFlags.GetProperty, null, com, null);
+                results[pn] = val?.ToString() ?? "null";
+            }
+            catch (Exception ex)
+            {
+                results[pn] = $"ERROR: {ex.InnerException?.Message ?? ex.Message}";
+            }
+        }
+
+        Logging.Info($"PresenceHandler: debugCom found {results.Count} entries");
+        return results;
     }
 }
