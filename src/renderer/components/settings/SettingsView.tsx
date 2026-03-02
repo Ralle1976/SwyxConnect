@@ -582,59 +582,15 @@ export default function SettingsView() {
       <SectionCard title="Microsoft Teams Präsenz" icon={<Wifi size={16} />}>
         <div className="flex flex-col gap-4">
 
-          {/* Lokale Erkennung Status */}
-          <div className="flex items-center justify-between rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <span
-                className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                  !teamsLocalPresence?.isRunning
-                    ? 'bg-zinc-300 dark:bg-zinc-600'
-                    : teamsLocalPresence?.availability === 'Unknown' || teamsLocalPresence?.availability === 'Offline'
-                      ? 'bg-zinc-400 dark:bg-zinc-500'
-                      : ['Busy', 'DoNotDisturb', 'OnThePhone'].includes(teamsLocalPresence?.availability ?? '')
-                        ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.4)]'
-                        : ['BeRightBack', 'Away'].includes(teamsLocalPresence?.availability ?? '')
-                          ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]'
-                          : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
-                }`}
-              />
-              <div className="flex flex-col">
-                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  {teamsLocalPresence?.isRunning
-                    ? getAvailabilityLabel(teamsLocalPresence.availability).label
-                    : 'Erkennung nicht aktiv'}
-                </span>
-                {teamsLocalPresence?.isRunning && teamsLocalPresence.source !== 'none' && (
-                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-                    {teamsLocalPresence.source === 'logfile' && 'via Teams Log-Datei'}
-                    {teamsLocalPresence.source === 'logfile-new' && 'via New Teams Log-Datei'}
-                    {teamsLocalPresence.source === 'process-check' && 'via Process-Erkennung'}
-                  </span>
-                )}
-              </div>
-            </div>
-            {teamsLocalPresence?.isRunning && teamsLocalPresence.activity !== 'Unknown' && (
-              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                teamsLocalPresence.activity === 'InACall'
-                  ? 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
-                  : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
-              }`}>
-                {teamsLocalPresence.activity === 'InACall' ? 'Im Gespräch' : 'Kein Gespräch'}
-              </span>
-            )}
-          </div>
-
-          {/* Funktions-Info */}
+          {/* Hinweis: Status kommt über SwyxWare */}
           <div className="rounded-lg border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5">
             <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
-              Erkennung
+              Status-Quelle
             </p>
             <div className="flex flex-col gap-1.5">
               {[
-                'Automatische Teams-Version-Erkennung (Legacy + New)',
-                'Log-Datei Überwachung (Classic Teams)',
-                'Process-Erkennung als Fallback',
-                'Echtzeit Status-Updates',
+                'Präsenz-Status wird über den SwyxWare-Server synchronisiert',
+                'Teams-Prozess-Erkennung als ergänzende Info',
               ].map((feature) => (
                 <div key={feature} className="flex items-center gap-2">
                   <Check size={11} className="text-emerald-500 flex-shrink-0" />
@@ -643,6 +599,44 @@ export default function SettingsView() {
               ))}
             </div>
           </div>
+
+          {/* Lokale Erkennung Status (nur wenn aktiv) */}
+          {teamsLocalPresence?.isRunning && (
+            <div className="flex items-center justify-between rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                    teamsLocalPresence.availability === 'Unknown' || teamsLocalPresence.availability === 'Offline'
+                      ? 'bg-zinc-400 dark:bg-zinc-500'
+                      : ['Busy', 'DoNotDisturb', 'OnThePhone'].includes(teamsLocalPresence.availability)
+                        ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.4)]'
+                        : ['BeRightBack', 'Away'].includes(teamsLocalPresence.availability)
+                          ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]'
+                          : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
+                  }`}
+                />
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Teams: {getAvailabilityLabel(teamsLocalPresence.availability).label}
+                  </span>
+                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                    {teamsLocalPresence.source === 'process-check' && 'via Prozess-Erkennung'}
+                    {teamsLocalPresence.source === 'logfile' && 'via Log-Datei (Legacy)'}
+                    {teamsLocalPresence.source === 'logfile-new' && 'via Log-Datei (New Teams)'}
+                  </span>
+                </div>
+              </div>
+              {teamsLocalPresence.activity !== 'Unknown' && (
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                  teamsLocalPresence.activity === 'InACall'
+                    ? 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
+                    : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                }`}>
+                  {teamsLocalPresence.activity === 'InACall' ? 'Im Gespräch' : 'Kein Gespräch'}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Graph API Status (falls aktiv) */}
           {teamsGraphStatus?.loggedIn && (
