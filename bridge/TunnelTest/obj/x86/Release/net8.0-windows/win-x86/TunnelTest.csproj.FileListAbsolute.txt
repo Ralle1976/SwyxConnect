@@ -1,0 +1,15 @@
+/home/tango/SwyxConnect/bridge/TunnelTest/bin/x86/Release/net8.0-windows/win-x86/TunnelTest.exe
+/home/tango/SwyxConnect/bridge/TunnelTest/bin/x86/Release/net8.0-windows/win-x86/TunnelTest.deps.json
+/home/tango/SwyxConnect/bridge/TunnelTest/bin/x86/Release/net8.0-windows/win-x86/TunnelTest.runtimeconfig.json
+/home/tango/SwyxConnect/bridge/TunnelTest/bin/x86/Release/net8.0-windows/win-x86/TunnelTest.dll
+/home/tango/SwyxConnect/bridge/TunnelTest/bin/x86/Release/net8.0-windows/win-x86/TunnelTest.pdb
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.GeneratedMSBuildEditorConfig.editorconfig
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.AssemblyInfoInputs.cache
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.AssemblyInfo.cs
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.csproj.CoreCompileInputs.cache
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.sourcelink.json
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.dll
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/refint/TunnelTest.dll
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.pdb
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/TunnelTest.genruntimeconfig.cache
+/home/tango/SwyxConnect/bridge/TunnelTest/obj/x86/Release/net8.0-windows/win-x86/ref/TunnelTest.dll
