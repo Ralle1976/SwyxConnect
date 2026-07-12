@@ -5,6 +5,7 @@ interface AuthStoreState extends AuthState {
   login: (credentials: AuthCredentials) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshSessionStatus: () => Promise<void>;
+  setAttachedSession: (session: AuthSessionInfo) => void;
   clearError: () => void;
 }
 
@@ -73,6 +74,16 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
     } catch (err) {
       console.error('Failed to refresh session status:', err);
     }
+  },
+
+  // Called when the bridge auto-attaches to an existing SwyxIt! session.
+  // No manual login needed — the COM session is already authenticated.
+  setAttachedSession: (session: AuthSessionInfo) => {
+    set({
+      status: 'authenticated',
+      session,
+      error: undefined,
+    });
   },
 
   clearError: () => {

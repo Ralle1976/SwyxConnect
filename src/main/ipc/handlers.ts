@@ -18,6 +18,11 @@ import { BridgeManager } from '../bridge/BridgeManager';
 import { SettingsStore } from '../services/SettingsStore';
 import { TeamsGraphService } from '../services/TeamsGraphService';
 
+// Captured attached session info from bridgeState events (auto-attach mode).
+// When the bridge reports mode="attached", we hold the server/username so
+// GET_SESSION_STATUS can report an authenticated session without manual login.
+let attachedSession: AuthSessionInfo | null = null;
+
 export function registerIpcHandlers(
   bridgeManager: BridgeManager,
   settingsStore: SettingsStore,
@@ -31,10 +36,15 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.LOGOUT, async () => {
+    attachedSession = null;
     return { ok: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_SESSION_STATUS, async (): Promise<AuthSessionInfo> => {
+    // If the bridge auto-attached to an existing SwyxIt! session, report it as authenticated
+    if (attachedSession) {
+      return attachedSession;
+    }
     return { isAuthenticated: false };
   });
 
@@ -238,13 +248,35 @@ export function registerIpcHandlers(
 
     switch (evt.method) {
       case 'bridgeState': {
-        // Map COM-level state string to BridgeState enum
-        const comState = (evt.params as { state: string }).state;
+        const params = evt.params as {
+          state: string;
+          mode?: string;
+          server?: string;
+          username?: string;
+        };
         const mappedState: BridgeState =
-          comState === 'connected' ? BridgeState.Connected : BridgeState.Disconnected;
+          params.state === 'connected' ? BridgeState.Connected : BridgeState.Disconnected;
         win.webContents.send(IPC_CHANNELS.BRIDGE_STATE_CHANGED, mappedState);
+
+        // Auto-Attach: bridge connected to an existing SwyxIt! session
+        if (params.mode === 'attached' && params.username) {
+          attachedSession = {
+            isAuthenticated: true,
+            server: params.server,
+            username: params.username,
+          };
+          win.webContents.send(IPC_CHANNELS.SESSION_ATTACHED, attachedSession);
+        }
         break;
       }
+
+      case 'cs.lineDetailsChanged':
+        win.webContents.send(IPC_CHANNELS.CS_LINE_DETAILS_CHANGED, evt.params);
+        break;
+
+      case 'cs.notificationCallsChanged':
+        win.webContents.send(IPC_CHANNELS.CS_NOTIFICATION_CALLS_CHANGED, evt.params);
+        break;
 
       case 'lineStateChanged':
         win.webContents.send(

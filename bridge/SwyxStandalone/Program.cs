@@ -182,15 +182,36 @@ static class Program
                     Logging.Info($"Standalone: Attached to existing session (user={user}, server={server}).");
 
                     // Auto-connect ComSocket for rich data (all colleagues, push events)
-                    _ = Task.Run(async () =>
+                    Logging.Info("Auto-Attach: Starting ComSocket discovery thread...");
+                    var comSocketThread = new Thread(async () =>
                     {
-                        _comSocketPort = await ComSocketClient.DiscoverPortAsync();
-                        if (_comSocketPort > 0)
+                        try
                         {
-                            await _comSocket!.ConnectAsync(_comSocketPort);
-                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = true, port = _comSocketPort });
+                            Logging.Info("Auto-Attach: ComSocket thread entered, calling DiscoverPortAsync...");
+                            _comSocketPort = await ComSocketClient.DiscoverPortAsync();
+                            Logging.Info($"Auto-Attach: ComSocket DiscoverPortAsync returned port={_comSocketPort}");
+                            if (_comSocketPort > 0)
+                            {
+                                await _comSocket!.ConnectAsync(_comSocketPort);
+                                Logging.Info($"Auto-Attach: ComSocket connected on port {_comSocketPort}");
+                                JsonRpcEmitter.EmitEvent("comSocketState", new { connected = true, port = _comSocketPort });
+                            }
+                            else
+                            {
+                                JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, reason = "port-discovery-failed" });
+                            }
                         }
-                    });
+                        catch (Exception ex)
+                        {
+                            Logging.Error($"Auto-Attach: ComSocket connect failed: {ex.Message}");
+                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, error = ex.Message });
+                        }
+                    })
+                    {
+                        IsBackground = true,
+                        Name = "ComSocketAutoConnect"
+                    };
+                    comSocketThread.Start();
 
                     JsonRpcEmitter.EmitEvent("bridgeState", new
                     {

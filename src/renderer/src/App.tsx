@@ -22,7 +22,7 @@ import CallcenterDashboard from '../components/callcenter/CallcenterDashboard'
 import { LoginView } from '../components/auth/LoginView'
 export function App() {
   const { isConnected, bridgeState } = useBridge()
-  const { status: authStatus, session, refreshSessionStatus } = useAuthStore()
+  const { status: authStatus, session, refreshSessionStatus, setAttachedSession } = useAuthStore()
   const lines = useLineStore((s) => s.lines)
   const setLines = useLineStore((s) => s.setLines)
   const setActiveCall = useLineStore((s) => s.setActiveCall)
@@ -59,8 +59,9 @@ export function App() {
     const unsub2 = window.swyxApi.onIncomingCall((call) => { setActiveCall(call) })
     const unsub3 = window.swyxApi.onPresenceChanged((colleagues) => { setColleagues(colleagues) })
     const unsub4 = window.swyxApi.onCallEnded((data) => { updateLine(data.lineId, { state: LineState.Inactive }) })
-    return () => { unsub1(); unsub2(); unsub3(); unsub4() }
-  }, [setLines, setActiveCall, setColleagues, updateLine])
+    const unsub5 = window.swyxApi.onSessionAttached((attachedSession) => { setAttachedSession(attachedSession) })
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5() }
+  }, [setLines, setActiveCall, setColleagues, updateLine, setAttachedSession])
 
   // Initiale Leitungsabfrage wenn Bridge verbunden
   const fetchInitialLines = useCallback(async () => {

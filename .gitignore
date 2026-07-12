@@ -57,6 +57,11 @@ scripts/test-all.mjs
 scripts/test-bridge.ps1
 scripts/findlock.ps1
 scripts/unlock.ps1
+scripts/cdp-*.mjs
+scripts/cdp-*.ps1
+scripts/test-bridge-attach.mjs
+scripts/test-comsocket-auth.mjs
+scripts/test-discover-port.mjs
 
 # Local analysis files (NEVER commit)
 *.local.md

@@ -184,6 +184,12 @@ const swyxApi = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.CALL_ENDED, handler)
   },
 
+  onSessionAttached: (callback: (session: AuthSessionInfo) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, session: AuthSessionInfo): void => callback(session)
+    ipcRenderer.on(IPC_CHANNELS.SESSION_ATTACHED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SESSION_ATTACHED, handler)
+  },
+
   // --- TeamsLocal ---
   teamsLocalConnect: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.TEAMS_LOCAL_CONNECT),
@@ -297,6 +303,16 @@ const swyxApi = {
     const handler = (_e: Electron.IpcRendererEvent, state: { connected: boolean; port: number }): void => callback(state)
     ipcRenderer.on(IPC_CHANNELS.CS_COMSOCKET_STATE, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.CS_COMSOCKET_STATE, handler)
+  },
+  onCsLineDetailsChanged: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.CS_LINE_DETAILS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CS_LINE_DETAILS_CHANGED, handler)
+  },
+  onCsNotificationCallsChanged: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.CS_NOTIFICATION_CALLS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CS_NOTIFICATION_CALLS_CHANGED, handler)
   },
 } as const
 

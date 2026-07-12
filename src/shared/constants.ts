@@ -64,6 +64,7 @@ export const IPC_CHANNELS = {
   PRESENCE_CHANGED: 'swyx:presenceChanged',
   CALL_ENDED: 'swyx:callEnded',
   HEARTBEAT: 'swyx:heartbeat',
+  SESSION_ATTACHED: 'swyx:sessionAttached',
   // TeamsLocal channels
   TEAMS_LOCAL_CONNECT: 'swyx:teamsLocal:connect',
   TEAMS_LOCAL_DISCONNECT: 'swyx:teamsLocal:disconnect',
@@ -106,7 +107,9 @@ export const IPC_CHANNELS = {
   CS_RECONNECT: 'swyx:cs:reconnect',
   // ComSocket events (main → renderer)
   CS_LINE_STATE_CHANGED: 'swyx:cs:lineStateChanged',
+  CS_LINE_DETAILS_CHANGED: 'swyx:cs:lineDetailsChanged',
   CS_USER_DATA_CHANGED: 'swyx:cs:userDataChanged',
+  CS_NOTIFICATION_CALLS_CHANGED: 'swyx:cs:notificationCallsChanged',
   CS_COMSOCKET_STATE: 'swyx:cs:comsocketState',
 } as const;
 

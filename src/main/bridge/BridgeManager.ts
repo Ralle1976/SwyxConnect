@@ -45,29 +45,17 @@ export class BridgeManager extends EventEmitter {
   private isShuttingDown = false;
 
   /**
-   * Bridge path: SwyxStandalone.dll (UseAppHost=false, so we launch via dotnet.exe).
-   * Tries x86 dotnet first (CLMgr COM is 32-bit), falls back to x64.
+   * Bridge path: SwyxMessenger.exe (UseAppHost=true → native apphost).
+   * The process name "SwyxMessenger.exe" matches the ComSocket auth whitelist.
    */
-  private get bridgeDll(): string {
+  private get bridgeExe(): string {
     if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'bridge', 'SwyxStandalone.dll');
+      return path.join(process.resourcesPath, 'bridge', 'SwyxMessenger.exe');
     }
     // Dev mode: app.getAppPath() returns .../out/main/ (where index.js lives).
     // Go up one level to reach .../out/ then into bridge/.
     const appPath = app.getAppPath();
-    return path.join(appPath, '..', 'bridge', 'SwyxStandalone.dll');
-  }
-
-  private get dotnetExe(): string {
-    // Prefer x86 dotnet (CLMgr COM is 32-bit, bridge compiled as x86)
-    const x86 = 'C:\\Program Files (x86)\\dotnet\\dotnet.exe';
-    const x64 = 'C:\\Program Files\\dotnet\\dotnet.exe';
-    try {
-      require('fs').accessSync(x86);
-      return x86;
-    } catch {
-      return x64;
-    }
+    return path.join(appPath, '..', 'bridge', 'SwyxMessenger.exe');
   }
 
   start(): void {
@@ -102,8 +90,8 @@ export class BridgeManager extends EventEmitter {
 
   private spawnProcess(): void {
     try {
-      // Launch SwyxStandalone.dll via dotnet.exe (UseAppHost=false workaround)
-      const child = spawn(this.dotnetExe, [this.bridgeDll], {
+      // Launch SwyxMessenger.exe directly (UseAppHost=true, process name matches ComSocket whitelist)
+      const child = spawn(this.bridgeExe, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
