@@ -91,6 +91,23 @@ export const IPC_CHANNELS = {
   TEAMS_GRAPH_STATE_CHANGED: 'swyx:teamsGraph:stateChanged',
   TEAMS_GRAPH_AUTH_REQUIRED: 'swyx:teamsGraph:authRequired',
   TEAMS_GRAPH_ERROR: 'swyx:teamsGraph:error',
+  // ComSocket (SignalR) channels — rich data from SwyxItHub
+  CS_GET_PHONEBOOK: 'swyx:cs:getPhoneBook',
+  CS_SEARCH_CONTACTS: 'swyx:cs:searchContacts',
+  CS_GET_CALL_JOURNAL: 'swyx:cs:getCallJournal',
+  CS_GET_SPEED_DIALS: 'swyx:cs:getSpeedDials',
+  CS_GET_VOICE_MESSAGES: 'swyx:cs:getVoiceMessages',
+  CS_GET_FORWARDING: 'swyx:cs:getForwarding',
+  CS_GET_AUDIO_MODES: 'swyx:cs:getAudioModes',
+  CS_GET_AUDIO_VOLUMES: 'swyx:cs:getAudioVolumes',
+  CS_GET_USER_GROUPS: 'swyx:cs:getUserGroups',
+  CS_GET_VERSION_INFO: 'swyx:cs:getVersionInfo',
+  CS_GET_STATUS: 'swyx:cs:getStatus',
+  CS_RECONNECT: 'swyx:cs:reconnect',
+  // ComSocket events (main → renderer)
+  CS_LINE_STATE_CHANGED: 'swyx:cs:lineStateChanged',
+  CS_USER_DATA_CHANGED: 'swyx:cs:userDataChanged',
+  CS_COMSOCKET_STATE: 'swyx:cs:comsocketState',
 } as const;
 
 export type IpcChannelKey = keyof typeof IPC_CHANNELS;

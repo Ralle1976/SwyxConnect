@@ -22,8 +22,31 @@ import {
   Cpu,
 } from 'lucide-react'
 import { useSettingsStore, applyTheme } from '../../stores/useSettingsStore'
+import type { ForwardingConfig } from '../../types/swyx'
 
 type Theme = 'light' | 'dark' | 'system'
+
+// Normalise the loose ComSocket payload into the typed ForwardingConfig shape.
+function asForwardingConfig(payload: unknown): ForwardingConfig | null {
+  if (!payload || typeof payload !== 'object') return null
+  const p = payload as Record<string, unknown>
+  const cfg: ForwardingConfig = {}
+  if (p.unconditional && typeof p.unconditional === 'object') {
+    cfg.unconditional = p.unconditional as ForwardingConfig['unconditional']
+  }
+  if (p.busy && typeof p.busy === 'object') {
+    cfg.busy = p.busy as ForwardingConfig['busy']
+  }
+  if (p.noReply && typeof p.noReply === 'object') {
+    cfg.noReply = p.noReply as ForwardingConfig['noReply']
+  }
+  return cfg
+}
+
+// Forwarding rule status codes from the ComSocket: non-zero means "active".
+function isForwardingActive(rule: { status?: number } | undefined): boolean {
+  return !!rule && (rule.status ?? 0) !== 0
+}
 
 const THEME_OPTIONS: { label: string; value: Theme; icon: React.ReactNode }[] = [
   { label: 'Hell', value: 'light', icon: <Sun size={14} /> },
@@ -340,6 +363,8 @@ export default function SettingsView() {
   const [comAudioDevices, setComAudioDevices] = useState<Record<string, unknown> | null>(null)
   const [comMicEnabled, setComMicEnabled] = useState<boolean | null>(null)
   const [comSpeakerEnabled, setComSpeakerEnabled] = useState<boolean | null>(null)
+  // ComSocket forwarding config (richer than COM; null = not yet loaded/available)
+  const [forwardingConfig, setForwardingConfig] = useState<ForwardingConfig | null>(null)
 
   const enumerateDevices = useCallback(async () => {
     try {
@@ -375,6 +400,21 @@ export default function SettingsView() {
   useEffect(() => {
     fetchConnectionInfo()
   }, [fetchConnectionInfo])
+
+  // ComSocket forwarding config — optional, only shown when the bridge answers.
+  const fetchForwarding = useCallback(async () => {
+    try {
+      const payload = await window.swyxApi.csGetForwarding()
+      setForwardingConfig(asForwardingConfig(payload))
+    } catch {
+      // ComSocket nicht verbunden — Sektion bleibt ausgeblendet
+      setForwardingConfig(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchForwarding()
+  }, [fetchForwarding])
 
   function handleThemeChange(t: Theme) {
     setTheme(t)
@@ -766,6 +806,64 @@ export default function SettingsView() {
               <span className="text-xs text-zinc-500 dark:text-zinc-400">SwyxIt!-Fenster wird automatisch minimiert</span>
             </div>
           </div>
+
+          {/* Rufumleitung (ComSocket) */}
+          {forwardingConfig && (
+            <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">Rufumleitung</span>
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 font-semibold">
+                  ComSocket
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {([
+                  {
+                    label: 'Immer',
+                    active: isForwardingActive(forwardingConfig.unconditional),
+                    number: forwardingConfig.unconditional?.number,
+                  },
+                  {
+                    label: 'Bei besetzt',
+                    active: isForwardingActive(forwardingConfig.busy),
+                    number: forwardingConfig.busy?.number,
+                  },
+                  {
+                    label: 'Bei Nichtannahme',
+                    active: isForwardingActive(forwardingConfig.noReply),
+                    number: forwardingConfig.noReply?.number,
+                    timeout: forwardingConfig.noReply?.timeout,
+                  },
+                ] as { label: string; active: boolean; number?: string; timeout?: number }[]).map((rule) => (
+                  <div
+                    key={rule.label}
+                    className="flex items-center justify-between rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-800 px-3 py-2"
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-xs text-zinc-700 dark:text-zinc-300 font-medium">{rule.label}</span>
+                      {rule.active && rule.number ? (
+                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono mt-0.5">
+                          → {rule.number}
+                          {typeof rule.timeout === 'number' ? ` · nach ${rule.timeout}s` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">Inaktiv</span>
+                      )}
+                    </div>
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        rule.active
+                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                      }`}
+                    >
+                      {rule.active ? 'AN' : 'AUS'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Amtsvorwahl */}
           <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">

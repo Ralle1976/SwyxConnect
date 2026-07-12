@@ -26,6 +26,17 @@ export type {
   AuthCredentials,
   AuthSessionInfo,
   AuthState,
+  // ─── ComSocket (SignalR) rich-data payloads ────────────────────────────────
+  PhoneBookEntry,
+  PhoneBookReply,
+  JournalEntry,
+  JournalPart,
+  SpeedDialEntry,
+  ForwardingConfig,
+  AudioModes,
+  AudioVolumes,
+  VersionInfo,
+  UserGroup,
 } from '../../shared/types';
 
 import type { SwyxApi, WindowControls } from '../../preload/index';

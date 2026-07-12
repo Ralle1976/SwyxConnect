@@ -255,6 +255,49 @@ const swyxApi = {
     ipcRenderer.on(IPC_CHANNELS.TEAMS_GRAPH_ERROR, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAMS_GRAPH_ERROR, handler)
   },
+
+  // ─── ComSocket (SignalR) API — rich data from SwyxItHub ────────────────────
+  csGetPhoneBook: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_PHONEBOOK),
+  csSearchContacts: (query: string): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_SEARCH_CONTACTS, query),
+  csGetCallJournal: (part?: number): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_CALL_JOURNAL, part ?? 0),
+  csGetSpeedDials: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_SPEED_DIALS),
+  csGetVoiceMessages: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_VOICE_MESSAGES),
+  csGetForwarding: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_FORWARDING),
+  csGetAudioModes: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_AUDIO_MODES),
+  csGetAudioVolumes: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_AUDIO_VOLUMES),
+  csGetUserGroups: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_USER_GROUPS),
+  csGetVersionInfo: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_VERSION_INFO),
+  csGetStatus: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_GET_STATUS),
+  csReconnect: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CS_RECONNECT),
+
+  // ComSocket event listeners
+  onCsLineStateChanged: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.CS_LINE_STATE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CS_LINE_STATE_CHANGED, handler)
+  },
+  onCsUserDataChanged: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: unknown): void => callback(data)
+    ipcRenderer.on(IPC_CHANNELS.CS_USER_DATA_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CS_USER_DATA_CHANGED, handler)
+  },
+  onComSocketState: (callback: (state: { connected: boolean; port: number }) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, state: { connected: boolean; port: number }): void => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.CS_COMSOCKET_STATE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.CS_COMSOCKET_STATE, handler)
+  },
 } as const
 
 // ─── Expose to Renderer ───────────────────────────────────────────────────────

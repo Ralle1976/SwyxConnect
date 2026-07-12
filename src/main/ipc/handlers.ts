@@ -275,9 +275,59 @@ export function registerIpcHandlers(
         win.webContents.send(IPC_CHANNELS.TEAMS_LOCAL_PRESENCE_CHANGED, evt.params);
         break;
 
+      case 'cs.lineStateChanged':
+        win.webContents.send(IPC_CHANNELS.CS_LINE_STATE_CHANGED, evt.params);
+        break;
+
+      case 'cs.userDataChanged':
+        win.webContents.send(IPC_CHANNELS.CS_USER_DATA_CHANGED, evt.params);
+        break;
+
+      case 'comSocketState':
+        win.webContents.send(IPC_CHANNELS.CS_COMSOCKET_STATE, evt.params);
+        break;
+
       default:
         break;
     }
+  });
+
+  // ─── ComSocket (SignalR) Handlers ────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.CS_GET_PHONEBOOK, async () => {
+    return bridgeManager.sendRequest('cs.getPhoneBook');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_SEARCH_CONTACTS, async (_event, query: string) => {
+    return bridgeManager.sendRequest('cs.searchContacts', { query });
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_CALL_JOURNAL, async (_event, part: number = 0) => {
+    return bridgeManager.sendRequest('cs.getCallJournal', { part });
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_SPEED_DIALS, async () => {
+    return bridgeManager.sendRequest('cs.getSpeedDials');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_VOICE_MESSAGES, async () => {
+    return bridgeManager.sendRequest('cs.getVoiceMessages');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_FORWARDING, async () => {
+    return bridgeManager.sendRequest('cs.getForwardingConfig');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_AUDIO_MODES, async () => {
+    return bridgeManager.sendRequest('cs.getAudioModes');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_AUDIO_VOLUMES, async () => {
+    return bridgeManager.sendRequest('cs.getAudioVolumes');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_USER_GROUPS, async () => {
+    return bridgeManager.sendRequest('cs.getUserGroups');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_VERSION_INFO, async () => {
+    return bridgeManager.sendRequest('cs.getVersionInfo');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_GET_STATUS, async () => {
+    return bridgeManager.sendRequest('cs.getStatus');
+  });
+  ipcMain.handle(IPC_CHANNELS.CS_RECONNECT, async () => {
+    return bridgeManager.sendRequest('cs.reconnect');
   });
 }
 

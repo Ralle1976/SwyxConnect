@@ -89,6 +89,91 @@ export interface ColleaguePresence {
   statusText?: string;
 }
 
+// ─── ComSocket (SignalR) types ───────────────────────────────────────────────
+
+export interface PhoneBookEntry {
+  id: number;
+  name: string;
+  number: string;
+  description?: string;
+  editable: number;
+  hide: number;
+  curState: number; // 0=Offline, 3=Away, 4=Busy
+  entityType: number; // 3=User, 4=Group
+  entityId: number;
+  siteId: number;
+  numberId: number;
+  numberType: number;
+}
+
+export interface PhoneBookReply {
+  totalEntriesFiltered: number;
+  startIndex: number;
+  entries: PhoneBookEntry[];
+}
+
+export interface JournalEntry {
+  id: string;
+  kind: number; // 0=incoming, 1=?, 2=missed, ...
+  name: string;
+  number: string;
+  callStart: string; // ISO-8601
+  callDuration: number; // seconds
+  callState: number;
+  callbackState: number;
+  dialedNumber?: string;
+  dialedName?: string;
+  connectedName?: string;
+  viewed?: boolean;
+  callbackRequested?: boolean;
+}
+
+export interface SpeedDialEntry {
+  keyIndex?: number;
+  name: string;
+  number: string;
+  state: number; // 0=Offline, 2=Available, 3=Busy, 4=DND, 5=Away
+}
+
+export interface ForwardingConfig {
+  unconditional?: { status: number; number: string };
+  busy?: { status: number; number: string };
+  noReply?: { status: number; number: string; timeout: number };
+}
+
+export interface AudioModes {
+  isIdle: boolean;
+  isOpenListening: boolean;
+  currentAudioMode: number;
+  defaultAudioMode: number;
+  isHandsetAvailable: boolean;
+  isHandsfreeAvailable: boolean;
+  isHeadsetAvailable: boolean;
+  isOpenListeningAvailable: boolean;
+}
+
+export interface AudioVolumes {
+  handsetVolume: number;
+  handsfreeVolume: number;
+  headsetVolume: number;
+  ringingVolume: number;
+  openListeningVolume: number;
+  isMicrophoneEnabled: boolean;
+}
+
+export interface VersionInfo {
+  swyxItVersion: string;
+  comSocketInterfaceVersion: number;
+  comSocketVersion: string;
+}
+
+export interface UserGroup {
+  groupId: number;
+  name: string;
+}
+
+export type JournalPart = 'all' | 'missed' | 'outgoing' | 'incoming';
+
 export interface WindowBounds {
   x: number;
   y: number;
