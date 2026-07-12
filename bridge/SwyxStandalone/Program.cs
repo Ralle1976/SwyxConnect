@@ -37,6 +37,9 @@ static class Program
     private static SystemInfoHandler? _systemInfoHandler;
     private static ChatHandler? _chatHandler;
     private static CtiHandler? _ctiHandler;
+    private static ComSocketClient? _comSocket;
+    private static ComSocketHandler? _comSocketHandler;
+    private static int _comSocketPort;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
 
@@ -114,6 +117,28 @@ static class Program
         _chatHandler       = new ChatHandler(_connector);
         _ctiHandler        = new CtiHandler(_connector);
 
+        // ComSocket (SignalR) — connects to SwyxItHub in CLMgr for rich data
+        _comSocket = new ComSocketClient();
+        _comSocketHandler = new ComSocketHandler(_comSocket);
+
+        // Wire ComSocket events → JSON-RPC push events to Electron
+        _comSocket.LineStateChanged += data =>
+        {
+            JsonRpcEmitter.EmitEvent("cs.lineStateChanged", data);
+        };
+        _comSocket.LineDetailsChanged += data =>
+        {
+            JsonRpcEmitter.EmitEvent("cs.lineDetailsChanged", data);
+        };
+        _comSocket.UserDataChanged += data =>
+        {
+            JsonRpcEmitter.EmitEvent("cs.userDataChanged", data);
+        };
+        _comSocket.NotificationCallsChanged += data =>
+        {
+            JsonRpcEmitter.EmitEvent("cs.notificationCallsChanged", data);
+        };
+
         if (!string.IsNullOrEmpty(argServer) && !string.IsNullOrEmpty(argUser) && !string.IsNullOrEmpty(argPass))
         {
             try
@@ -155,6 +180,18 @@ static class Program
                     // SwyxIt! is running and logged in — attach to existing session
                     EventSink.Subscribe(_connector, _lineManager);
                     Logging.Info($"Standalone: Attached to existing session (user={user}, server={server}).");
+
+                    // Auto-connect ComSocket for rich data (all colleagues, push events)
+                    _ = Task.Run(async () =>
+                    {
+                        _comSocketPort = await ComSocketClient.DiscoverPortAsync();
+                        if (_comSocketPort > 0)
+                        {
+                            await _comSocket!.ConnectAsync(_comSocketPort);
+                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = true, port = _comSocketPort });
+                        }
+                    });
+
                     JsonRpcEmitter.EmitEvent("bridgeState", new
                     {
                         state    = "connected",
@@ -239,6 +276,10 @@ static class Program
         else if (_ctiHandler?.CanHandle(req.Method) == true)
         {
             _ctiHandler.Handle(req);
+        }
+        else if (_comSocketHandler?.CanHandle(req.Method) == true)
+        {
+            _comSocketHandler.Handle(req);
         }
         else
         {
