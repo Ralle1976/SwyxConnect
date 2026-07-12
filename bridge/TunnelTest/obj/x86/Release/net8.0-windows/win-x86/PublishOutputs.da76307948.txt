@@ -1,0 +1,5 @@
+/tmp/tunnel-test/TunnelTest.exe
+/tmp/tunnel-test/TunnelTest.dll
+/tmp/tunnel-test/TunnelTest.deps.json
+/tmp/tunnel-test/TunnelTest.runtimeconfig.json
+/tmp/tunnel-test/TunnelTest.pdb

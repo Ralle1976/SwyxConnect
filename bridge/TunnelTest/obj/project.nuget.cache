@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "8GXXzTLQJq8=",
+  "success": true,
+  "projectFilePath": "/home/tango/SwyxConnect/bridge/TunnelTest/TunnelTest.csproj",
+  "expectedPackageFiles": [
+    "/home/tango/.nuget/packages/microsoft.windowsdesktop.app.ref/8.0.24/microsoft.windowsdesktop.app.ref.8.0.24.nupkg.sha512",
+    "/home/tango/.nuget/packages/microsoft.netcore.app.host.win-x86/8.0.24/microsoft.netcore.app.host.win-x86.8.0.24.nupkg.sha512"
+  ],
+  "logs": []
+}

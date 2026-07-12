@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platform>x86</Platform>
+    <!-- Workaround: CreateAppHost fails with MemoryMappedFile IO error on some systems.
+         The build still produces a valid DLL that runs via 'dotnet SwyxStandalone.dll'.
+         For production packaging, build on a system without this issue or use publish. -->
+    <UseAppHost>false</UseAppHost>
+    <RootNamespace>SwyxStandalone</RootNamespace>
+    <AssemblyName>SwyxStandalone</AssemblyName>
+    <Description>Swyx Standalone COM Bridge â€” verbindet direkt per RegisterUserEx ohne laufendes SwyxIt!</Description>
+    <Version>1.0.0</Version>
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Swyx.Client.ClmgrAPI" Version="*" />
+    <PackageReference Include="System.Text.Json" Version="8.*" />
+  </ItemGroup>
+</Project>

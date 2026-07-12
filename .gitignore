@@ -1,0 +1,76 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# .NET build
+bridge/SwyxSpike/bin/
+bridge/SwyxSpike/obj/
+bridge/SwyxBridge/bin/
+bridge/SwyxBridge/obj/
+bridge/SwyxStandalone/bin/
+bridge/SwyxStandalone/obj/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Electron
+*.asar
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Build artifacts
+resources/bridge/
+*.tsbuildinfo
+
+# COM debug dumps
+*_members.txt
+
+# Screenshots
+*.jpg
+*.png
+!resources/*.png
+
+# Debug scripts
+scripts/debug*.mjs
+scripts/call-debug*.mjs
+scripts/test-all.mjs
+scripts/test-bridge.ps1
+scripts/findlock.ps1
+scripts/unlock.ps1
+
+# Local analysis files (NEVER commit)
+*.local.md
+SWYX_REVERSE_ENGINEERING*
+
+# Worktrees
+.worktrees/
+
+.zcode/
+graphify-out/
+
+# Internal docs — never commit
+AGENTS.md
+*.local.md
+RELEASE_NOTES*
+SWYX_REVERSE*
+bridge/SwyxStandalone/ComSocketAuth.md
