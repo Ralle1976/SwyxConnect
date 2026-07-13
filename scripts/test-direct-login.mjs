@@ -32,7 +32,10 @@ if (!username || !password) {
 console.log(`Credentials loaded: user=<hidden>, pass length=${password.length}`);
 
 // Also check for server/backup
-const server = env.SWYX_SERVER || '127.0.0.1';
+// Use the PUBLIC server (RC0321.axxess.de) not the internal IP (172.18.3.202)
+// SwyxIt! uses a local tunnel (127.0.0.1) internally, but direct CLMgr login
+// needs the real server address. The public server is reachable externally.
+const server = env.SWYX_PUBLIC_SERVER || 'RC0321.axxess.de:15021';
 const backupServer = env.SWYX_BACKUP_SERVER || '';
 console.log(`Server: ${server}`);
 
