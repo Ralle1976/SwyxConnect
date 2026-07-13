@@ -3,9 +3,9 @@
 > **Modern Electron-based softphone client for Swyx/Enreach telephony.**
 > Replaces SwyxIt! as the primary phone interface with a clean, modern UI.
 
-[![Version: 1.2.0](https://img.shields.io/badge/Version-1.2.0-brightgreen.svg)]()
+[![Version: 1.3.0](https://img.shields.io/badge/Version-1.3.0-brightgreen.svg)]()
 [![Platform: Windows x86](https://img.shields.io/badge/Platform-Windows%20x86-lightgrey.svg)]()
-[![SwyxIt: v14.x](https://img.shields.io/badge/SwyxIt!-v14.x-orange.svg)]()
+[![Swyx: v14.x](https://img.shields.io/badge/Swyx-v14.x-orange.svg)]()
 [![.NET: 8.0](https://img.shields.io/badge/.NET-8.0-purple.svg)]()
 
 ---
@@ -27,25 +27,38 @@ SwyxConnect is a desktop softphone client that communicates with the Swyx Client
 - **Auto-Attach:** Detects running SwyxIt! session and connects automatically — verified working
 - **Real-time Push Events:** ComSocket (SignalR) delivers instant line-state and presence updates (wiring verified, live events not observed during testing)
 
-### Architecture (Hybrid: COM + ComSocket)
+### Architecture (v1.3.0 — Headless Tunnel Mode)
 
 ```
 Electron App (Node.js + React 19 + TypeScript + Tailwind v4)
   Main Process ←→ Preload (contextBridge) ←→ Renderer (Zustand stores)
        │
+       │ Reads .env (SWYX_USERNAME, SWYX_PASSWORD, SWYX_SERVER, SWYX_PUBLIC_SERVER)
        │ stdin/stdout (JSON-RPC 2.0, newline-delimited)
        ▼
   C# Bridge — SwyxMessenger.exe (.NET 8, x86, UseAppHost=true)
+  ├── SwyxItSuppressor (kills classic SwyxIt!, disables Startup shortcut)
   ├── COM Interop → CLMgr.exe (32-bit COM Server)
-  │   └── Login, Call Control, Line State, Audio, Voicemail, Forwarding
+  │   ├── RegisterUserConnector4UC → TLS Tunnel to public Swyx Server
+  │   └── Call Control, Line State, Audio, Voicemail, Forwarding
   └── ComSocket (SignalR) → SwyxItHub @ ws://localhost:PORT/swyxIt
-      └── PhoneBook, CallJournal, SpeedDials, VoiceMessages, live Push Events
+      └── PhoneBook (30+ colleagues), CallJournal, live Push Events
        │
        ▼
-  CLMgr.exe — Swyx Client Line Manager (requires running SwyxIt! session)
+  CLMgr.exe — Swyx Client Line Manager (owns full telephony stack: SIP/RTP/Tunnel)
+       │
+       ▼
+  Swyx Server (via RemoteConnector TLS Tunnel — no SwyxIt! required)
 ```
 
-### Why Hybrid?
+### Two Connection Modes
+
+| Mode | When | How | SwyxIt! needed? |
+|---|---|---|---|
+| **Tunnel (v1.3.0)** | `.env` file present with credentials | `RegisterUserConnector4UC` builds TLS tunnel to public server | ❌ No — SwyxConnect is the CTI master |
+| **Auto-Attach (v1.2.x)** | No `.env` file | Attaches to existing SwyxIt! session via COM | ✅ Yes — SwyxIt! must be running |
+
+### Why Hybrid COM + ComSocket?
 
 | Protocol | Strength | Use |
 |---|---|---|
@@ -53,14 +66,6 @@ Electron App (Node.js + React 19 + TypeScript + Tailwind v4)
 | **ComSocket** | Rich data, all colleagues, real-time push | PhoneBook (all entries), CallJournal, Presence updates |
 
 COM alone only exposes speed-dial contacts (6-10 entries). ComSocket delivers the **complete company phonebook (30+ colleagues)** with live presence. The bridge combines both for maximum coverage.
-
-### Auto-Attach Mode
-
-SwyxConnect automatically detects a running SwyxIt! session and attaches to it — no manual login required. If SwyxIt! is running and logged in, SwyxConnect:
-1. Attaches to the existing COM session
-2. Connects to the ComSocket SignalR hub
-3. Loads all colleagues, call history, and configuration
-4. Lands directly in the main UI (skips the login form)
 
 ## Requirements
 
