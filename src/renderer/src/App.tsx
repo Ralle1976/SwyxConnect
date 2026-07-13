@@ -11,6 +11,7 @@ import { usePresenceStore } from '../stores/usePresenceStore'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useCallHistoryTracker } from '../stores/useCallHistoryTracker'
 import { useHistoryStore } from '../stores/useHistoryStore'
+import { usePhoneBookStore } from '../stores/usePhoneBookStore'
 import { LineState, PresenceStatus } from '../types/swyx'
 import PhoneView from '../components/phone/PhoneView'
 import ContactsView from '../components/contacts/ContactsView'
@@ -160,7 +161,49 @@ export function App() {
     }
   }, [isConnected, setLines])
 
-  // ─── Auto-Presence basierend auf Leitungsstatus ─────────────────────────
+  // ─── ComSocket PhoneBook + Journal: Initial Load + Update Mode ────────
+  // Push events (cs.userDataChanged) are unreliable in Auto-Attach mode.
+  // User can choose: "push" (best-effort, may miss updates) or "polling" (reliable).
+  const presenceUpdateMode = useSettingsStore((s) => s.presenceUpdateMode)
+  const presencePollInterval = useSettingsStore((s) => s.presencePollInterval)
+  const csPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (!isConnected || !window.swyxApi) return
+
+    const { refreshPhoneBook, refreshJournal } = usePhoneBookStore.getState()
+
+    // Initial load: phonebook + journal
+    void refreshPhoneBook()
+    void refreshJournal('all')
+
+    if (presenceUpdateMode === 'polling') {
+      // Polling mode: refresh phonebook every N seconds
+      csPollRef.current = setInterval(() => {
+        void usePhoneBookStore.getState().refreshPhoneBook()
+      }, Math.max(3, presencePollInterval) * 1000)
+    } else {
+      // Push mode: subscribe to cs.userDataChanged events
+      const unsub = window.swyxApi.onCsUserDataChanged(() => {
+        void usePhoneBookStore.getState().refreshPhoneBook()
+      })
+      // Store cleanup via a ref-like pattern
+      return () => {
+        unsub()
+        if (csPollRef.current) {
+          clearInterval(csPollRef.current)
+          csPollRef.current = null
+        }
+      }
+    }
+
+    return () => {
+      if (csPollRef.current) {
+        clearInterval(csPollRef.current)
+        csPollRef.current = null
+      }
+    }
+  }, [isConnected, presenceUpdateMode, presencePollInterval])
   const isInCall = useMemo(() => hasActiveCall(lines), [lines])
 
   useEffect(() => {

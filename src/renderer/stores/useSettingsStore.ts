@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { AppSettings, TeamsIntegrationMode } from '../types/swyx';
 
 type Theme = 'light' | 'dark' | 'system';
+type PresenceUpdateMode = 'push' | 'polling';
 
 interface SettingsStoreState {
   // Alle AppSettings-Felder
@@ -19,6 +20,8 @@ interface SettingsStoreState {
   teamsIntegrationMode: TeamsIntegrationMode;
   trunkPrefix: string;
   trunkPrefixEnabled: boolean;
+  presenceUpdateMode: PresenceUpdateMode;
+  presencePollInterval: number;
   // Actions
   setTheme: (theme: Theme) => void;
   toggleSidebar: () => void;
@@ -34,6 +37,8 @@ interface SettingsStoreState {
   setTeamsIntegrationMode: (mode: TeamsIntegrationMode) => void;
   setTrunkPrefix: (prefix: string) => void;
   setTrunkPrefixEnabled: (enabled: boolean) => void;
+  setPresenceUpdateMode: (mode: PresenceUpdateMode) => void;
+  setPresencePollInterval: (seconds: number) => void;
   // Sync mit Main Process
   loadFromMain: () => Promise<void>;
   saveToMain: (patch: Partial<AppSettings>) => Promise<void>;
@@ -55,6 +60,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
       teamsIntegrationMode: 'off' as TeamsIntegrationMode,
       trunkPrefix: '0',
       trunkPrefixEnabled: true,
+      presenceUpdateMode: 'polling' as PresenceUpdateMode,
+      presencePollInterval: 5,
 
       setTheme: (theme) => {
         set({ theme });
@@ -117,6 +124,14 @@ export const useSettingsStore = create<SettingsStoreState>()(
         set({ trunkPrefixEnabled: enabled });
         get().saveToMain({ trunkPrefixEnabled: enabled });
       },
+      setPresenceUpdateMode: (mode) => {
+        set({ presenceUpdateMode: mode });
+        get().saveToMain({ presenceUpdateMode: mode });
+      },
+      setPresencePollInterval: (seconds) => {
+        set({ presencePollInterval: seconds });
+        get().saveToMain({ presencePollInterval: seconds });
+      },
 
       loadFromMain: async () => {
         if (!window.swyxApi) return;
@@ -137,6 +152,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
               teamsIntegrationMode: settings.teamsIntegrationMode ?? 'off',
               trunkPrefix: settings.trunkPrefix ?? '0',
               trunkPrefixEnabled: settings.trunkPrefixEnabled ?? true,
+              presenceUpdateMode: settings.presenceUpdateMode ?? 'polling',
+              presencePollInterval: settings.presencePollInterval ?? 5,
             });
           }
         } catch { /* Bridge noch nicht bereit */ }
@@ -165,6 +182,8 @@ export const useSettingsStore = create<SettingsStoreState>()(
         teamsIntegrationMode: state.teamsIntegrationMode,
         trunkPrefix: state.trunkPrefix,
         trunkPrefixEnabled: state.trunkPrefixEnabled,
+        presenceUpdateMode: state.presenceUpdateMode,
+        presencePollInterval: state.presencePollInterval,
       }),
     }
   )

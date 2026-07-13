@@ -20,6 +20,7 @@ import {
   Server,
   RefreshCw,
   Cpu,
+  Activity,
 } from 'lucide-react'
 import { useSettingsStore, applyTheme } from '../../stores/useSettingsStore'
 import type { ForwardingConfig } from '../../types/swyx'
@@ -325,6 +326,8 @@ export default function SettingsView() {
     numberOfLines,
     trunkPrefix,
     trunkPrefixEnabled,
+    presenceUpdateMode,
+    presencePollInterval,
     setTheme,
     toggleSidebar,
     setStartMinimized,
@@ -332,6 +335,8 @@ export default function SettingsView() {
     setAudioInputDevice,
     setAudioOutputDevice,
     setAudioInputVolume,
+    setPresenceUpdateMode,
+    setPresencePollInterval,
     setAudioOutputVolume,
     setNumberOfLines,
     setTrunkPrefix,
@@ -588,6 +593,67 @@ export default function SettingsView() {
             value={sidebarCollapsed}
             onChange={toggleSidebar}
           />
+        </div>
+      </SectionCard>
+
+      {/* ─── Daten-Aktualisierung ──────────────────────────────────────── */}
+      <SectionCard title="Daten-Aktualisierung" icon={<Activity size={16} />}>
+        <div className="flex flex-col gap-3">
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 -mt-2 mb-1">
+            Steuert, wie oft Kollegen-Präsenz und Anruf-Daten aktualisiert werden.
+            "Polling" ist zuverlässig, "Push" nutzt Server-Events (falls verfügbar).
+          </p>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Update-Modus</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPresenceUpdateMode('polling')}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                  presenceUpdateMode === 'polling'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400'
+                    : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                }`}
+              >
+                Polling (empfohlen)
+              </button>
+              <button
+                onClick={() => setPresenceUpdateMode('push')}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                  presenceUpdateMode === 'push'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400'
+                    : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                }`}
+              >
+                Push (Experimentell)
+              </button>
+            </div>
+          </div>
+          {presenceUpdateMode === 'polling' && (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Polling-Intervall: {presencePollInterval}s
+              </label>
+              <input
+                type="range"
+                min={3}
+                max={30}
+                step={1}
+                value={presencePollInterval}
+                onChange={(e) => setPresencePollInterval(Number(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+              <div className="flex justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
+                <span>3s (oft)</span>
+                <span>30s (selten)</span>
+              </div>
+            </div>
+          )}
+          {presenceUpdateMode === 'push' && (
+            <p className="text-[11px] text-amber-500 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-lg">
+              ⚠️ Push-Events sind im Auto-Attach-Modus nicht zuverlässig getestet.
+              Wenn Kollegen-Status nicht aktualisiert, auf "Polling" wechseln.
+            </p>
+          )}
         </div>
       </SectionCard>
 
