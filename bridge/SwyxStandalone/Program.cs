@@ -39,6 +39,7 @@ static class Program
     private static CtiHandler? _ctiHandler;
     private static ComSocketClient? _comSocket;
     private static ComSocketHandler? _comSocketHandler;
+    private static SwyxItSuppressor? _swyxItSuppressor;
     private static int _comSocketPort;
     private static JsonRpcServer? _rpcServer;
     private static System.Timers.Timer? _heartbeat;
@@ -91,6 +92,7 @@ static class Program
         Logging.Info("SwyxStandalone beendet.");
         _heartbeat?.Stop();
         _rpcServer?.Stop();
+        _swyxItSuppressor?.Dispose();
         EventSink.Unsubscribe();
         _connector?.Dispose();
     }
@@ -102,6 +104,11 @@ static class Program
         _connector    = new StandaloneConnector();
         _lineManager  = new LineManager(_connector);
         _audioManager = new AudioManager(_connector);
+
+        // Suppress classic SwyxIt! — it pops up on call events and conflicts with our UI.
+        // Kill any running instance + disable the Startup shortcut.
+        _swyxItSuppressor = new SwyxItSuppressor();
+        _swyxItSuppressor.Start();
 
         _callHandler      = new CallHandler(_lineManager);
         _presenceHandler  = new PresenceHandler(_connector);
