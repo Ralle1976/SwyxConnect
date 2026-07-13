@@ -130,6 +130,36 @@ export function App() {
     if (isConnected) fetchInitialLines()
   }, [isConnected, fetchInitialLines])
 
+  // ─── Line-State Polling ────────────────────────────────────────────────
+  // COM push events (PubOnLineMgrNotification) are unreliable in Auto-Attach mode.
+  // Poll getLines() every 2s while connected to catch incoming calls and state changes.
+  const linePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (isConnected && window.swyxApi) {
+      linePollRef.current = setInterval(async () => {
+        try {
+          const result = await window.swyxApi.getLines()
+          const fetched = Array.isArray(result)
+            ? result
+            : (result as { lines: unknown[] } | null)?.lines ?? []
+          if (fetched.length > 0) setLines(fetched as import('../types/swyx').LineInfo[])
+        } catch { /* bridge busy — skip */ }
+      }, 2000)
+    } else {
+      if (linePollRef.current) {
+        clearInterval(linePollRef.current)
+        linePollRef.current = null
+      }
+    }
+    return () => {
+      if (linePollRef.current) {
+        clearInterval(linePollRef.current)
+        linePollRef.current = null
+      }
+    }
+  }, [isConnected, setLines])
+
   // ─── Auto-Presence basierend auf Leitungsstatus ─────────────────────────
   const isInCall = useMemo(() => hasActiveCall(lines), [lines])
 
