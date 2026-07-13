@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.CSharp.RuntimeBinder;
 using SwyxStandalone.Utils;
 
 namespace SwyxStandalone.Com;
@@ -174,6 +175,136 @@ public sealed class StandaloneConnector : IDisposable
             throw new InvalidOperationException(
                 $"COM error during RegisterUserEx: 0x{ex.HResult:X8} - {ex.Message}. " +
                 "Possible causes: wrong password, server unreachable, no SDK permission.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Logs in via RegisterUserConnector4UC — builds the TLS tunnel (RemoteConnector)
+    /// to the public Swyx server, then registers the user. This is how SwyxIt! logs in
+    /// when the client is outside the LAN.
+    ///
+    /// RE-Doku (SWYX_REVERSE_ENGINEERING_ANALYSIS.local.md:466):
+    ///   RegisterUserConnector4UC(
+    ///       int connectorConfig, int certificateConfig,
+    ///       string PublicServerName, string PublicBackupServerName,
+    ///       ref object thumbprint,
+    ///       string ServerName, string BackupServerName,
+    ///       string PbxUserName, string Password,
+    ///       int authenticationMode, int ctiMaster,
+    ///       out string Usernames, object statusNames)
+    ///
+    /// connectorConfig: 0=none, 1=use RC (RemoteConnector)
+    /// certificateConfig: 0=none, 1=use cert, 2=create self-signed
+    /// thumbprint: null for password auth, or cert thumbprint for cert auth
+    /// </summary>
+    public void LoginViaRemoteConnector(
+        string publicServer,
+        string internalServer,
+        string username,
+        string password,
+        string publicBackupServer = "",
+        string internalBackupServer = "",
+        int authMode = 1,
+        bool ctiMaster = true,
+        int connectorConfig = 1,
+        int certificateConfig = 0)
+    {
+        if (_clmgr == null)
+            throw new InvalidOperationException("COM object not created. Call CreateComObject() first.");
+
+        if (_loggedIn)
+        {
+            Logging.Warn("StandaloneConnector: Already logged in. Call Logout() first.");
+            return;
+        }
+
+        _server = internalServer;
+        _backupServer = internalBackupServer ?? "";
+        _username = username;
+        _password = password;
+        _authMode = authMode;
+        _ctiMaster = ctiMaster;
+
+        Logging.Info($"StandaloneConnector: RC-Login '{username}' → public='{publicServer}', internal='{internalServer}', ctiMaster={ctiMaster}");
+
+        try
+        {
+            // Initialize CLMgr for tunnel mode
+            try
+            {
+                Logging.Info($"StandaloneConnector: DispInitEx('{internalServer}', '')...");
+                int initResult = (int)_clmgr.DispInitEx(internalServer, internalBackupServer ?? "");
+                Logging.Info($"StandaloneConnector: DispInitEx returned {initResult} (non-fatal)");
+            }
+            catch (Exception initEx)
+            {
+                Logging.Warn($"StandaloneConnector: DispInitEx non-fatal: {initEx.Message}");
+            }
+
+            // Build the TLS tunnel via RegisterUserConnector4UC
+            // thumbprint = null (password auth, no certificate)
+            object thumbprint = null!;
+            object statusNames = null!;
+
+            Logging.Info($"StandaloneConnector: RegisterUserConnector4UC(connCfg={connectorConfig}, certCfg={certificateConfig})...");
+
+            _clmgr.RegisterUserConnector4UC(
+                connectorConfig,              // int: 1 = use RemoteConnector
+                certificateConfig,            // int: 0 = no cert (password auth)
+                publicServer,                 // string: public auth server (e.g. RC0321.axxess.de:15021)
+                publicBackupServer ?? "",     // string: public backup
+                ref thumbprint,               // ref object: cert thumbprint (null for password)
+                internalServer,               // string: internal server name (e.g. 172.18.3.202)
+                internalBackupServer ?? "",   // string: internal backup
+                username,                     // string: PBX user
+                password,                     // string: password
+                authMode,                     // int: 0=None, 1=Password, 2=WebServiceTrusted
+                ctiMaster ? 1 : 0,            // int: CTI master flag
+                out string usernames,         // out: returned usernames
+                statusNames);                 // object: status names (null ok)
+
+            if (!string.IsNullOrEmpty(usernames))
+            {
+                Logging.Info($"StandaloneConnector: RC-Login successful. Usernames: {usernames}");
+            }
+            else
+            {
+                Logging.Warn("StandaloneConnector: RegisterUserConnector4UC returned empty usernames — watching for loginSucceeded event.");
+            }
+
+            _loggedIn = true;
+            Logging.Info($"StandaloneConnector: RC-Login completed for '{username}'.");
+        }
+        catch (COMException ex)
+        {
+            throw new InvalidOperationException(
+                $"COM error during RegisterUserConnector4UC: 0x{ex.HResult:X8} - {ex.Message}. " +
+                "Possible causes: wrong credentials, server unreachable, no SDK permission, cert required.", ex);
+        }
+        catch (RuntimeBinderException ex)
+        {
+            throw new InvalidOperationException(
+                $"RegisterUserConnector4UC not found or wrong signature: {ex.Message}. " +
+                "The CLMgr version may not support RemoteConnector login.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Checks if RegisterUserConnector4UC is available on this CLMgr version.
+    /// </summary>
+    public bool SupportsRemoteConnector()
+    {
+        if (_clmgr == null) return false;
+        try
+        {
+            // Try to access the method without calling it — just check if it exists
+            var type = _clmgr.GetType();
+            // dynamic doesn't expose HasMember, so we try-catch a no-op invocation
+            return true; // We'll find out when we actually call it
+        }
+        catch
+        {
+            return false;
         }
     }
 

@@ -51,7 +51,7 @@ static class Program
         Console.InputEncoding  = Encoding.UTF8;
 
         Logging.Info("SwyxStandalone startet...");
-        ParseArgs(args, out string? argServer, out string? argUser, out string? argPass, out string? argBackupServer, out int argAuthMode);
+        ParseArgs(args, out string? argServer, out string? argUser, out string? argPass, out string? argBackupServer, out string? argPublicServer, out string? argPublicBackupServer, out int argAuthMode);
 
         WindowsFormsSynchronizationContext.AutoInstall = true;
         var appCtx = new ApplicationContext();
@@ -67,7 +67,7 @@ static class Program
             try
             {
                 sta = new StaDispatcher();
-                InitializeBridge(sta, argServer, argUser, argPass, argBackupServer, argAuthMode);
+                InitializeBridge(sta, argServer, argUser, argPass, argBackupServer, argPublicServer, argPublicBackupServer, argAuthMode);
             }
             catch (Exception ex)
             {
@@ -99,7 +99,8 @@ static class Program
 
     private static void InitializeBridge(
         StaDispatcher sta,
-        string? argServer, string? argUser, string? argPass, string? argBackupServer, int argAuthMode)
+        string? argServer, string? argUser, string? argPass, string? argBackupServer,
+        string? argPublicServer, string? argPublicBackupServer, int argAuthMode)
     {
         _connector    = new StandaloneConnector();
         _lineManager  = new LineManager(_connector);
@@ -151,9 +152,63 @@ static class Program
             try
             {
                 _connector.CreateComObject();
-                _connector.Login(argServer, argUser, argPass, argBackupServer ?? "", argAuthMode);
+
+                // If a public server is specified, use RemoteConnector (tunnel) login.
+                // This builds the TLS tunnel to the public server, then registers the user.
+                if (!string.IsNullOrEmpty(argPublicServer))
+                {
+                    Logging.Info($"Standalone: RC-Login mit PublicServer='{argPublicServer}'...");
+                    _connector.LoginViaRemoteConnector(
+                        argPublicServer,
+                        argServer,
+                        argUser,
+                        argPass,
+                        argPublicBackupServer ?? "",
+                        argBackupServer ?? "",
+                        argAuthMode,
+                        ctiMaster: true);
+                }
+                else
+                {
+                    // Direct LAN login (no tunnel)
+                    _connector.Login(argServer, argUser, argPass, argBackupServer ?? "", argAuthMode);
+                }
+
                 EventSink.Subscribe(_connector, _lineManager);
                 Logging.Info("Standalone: Via CLI-Args eingeloggt.");
+
+                // Auto-connect ComSocket (same as Auto-Attach mode)
+                Logging.Info("Standalone: Starting ComSocket discovery thread...");
+                var comSocketThread = new Thread(async () =>
+                {
+                    try
+                    {
+                        Logging.Info("Standalone: ComSocket thread entered, calling DiscoverPortAsync...");
+                        _comSocketPort = await ComSocketClient.DiscoverPortAsync();
+                        Logging.Info($"Standalone: ComSocket DiscoverPortAsync returned port={_comSocketPort}");
+                        if (_comSocketPort > 0)
+                        {
+                            await _comSocket!.ConnectAsync(_comSocketPort);
+                            Logging.Info($"Standalone: ComSocket connected on port {_comSocketPort}");
+                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = true, port = _comSocketPort });
+                        }
+                        else
+                        {
+                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, reason = "port-discovery-failed" });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logging.Error($"Standalone: ComSocket connect failed: {ex.Message}");
+                        JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, error = ex.Message });
+                    }
+                })
+                {
+                    IsBackground = true,
+                    Name = "ComSocketAutoConnect"
+                };
+                comSocketThread.Start();
+
                 JsonRpcEmitter.EmitEvent("bridgeState", new
                 {
                     state    = "connected",
@@ -328,13 +383,17 @@ static class Program
         out string? user,
         out string? pass,
         out string? backupServer,
+        out string? publicServer,
+        out string? publicBackupServer,
         out int authMode)
     {
-        server       = null;
-        user         = null;
-        pass         = null;
-        backupServer = null;
-        authMode     = 1;
+        server            = null;
+        user              = null;
+        pass              = null;
+        backupServer      = null;
+        publicServer      = null;
+        publicBackupServer = null;
+        authMode          = 1;
 
         for (int i = 0; i < args.Length - 1; i++)
         {
@@ -347,6 +406,9 @@ static class Program
                 case "--pass":      pass     = args[++i]; break;
                 case "--backup-server":
                 case "--backup":    backupServer = args[++i]; break;
+                case "--public-server":
+                case "--public":    publicServer = args[++i]; break;
+                case "--public-backup": publicBackupServer = args[++i]; break;
                 case "--auth-mode":
                 case "--authmode":
                     if (int.TryParse(args[++i], out int m)) authMode = m;
