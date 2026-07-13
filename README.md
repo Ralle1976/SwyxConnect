@@ -16,16 +16,16 @@ SwyxConnect is a desktop softphone client that communicates with the Swyx Client
 
 ### Key Features
 
-- **Full Telephony:** Dial, answer, hold, transfer, conference, DTMF, recording
-- **Complete Colleague Presence:** All colleagues from the company phonebook with live status (Available, Busy, Away, DND, Offline) — not just speed-dial contacts
-- **Detailed Call Journal:** Incoming, outgoing, and missed calls with duration, date, and contact name — sourced from the Swyx Call Journal
-- **Voicemail:** Visual voicemail with message count and remote inquiry
+- **Telephony:** Dial, answer, hold, transfer, conference, DTMF, recording (COM-based — implemented, see [verification status](#verified-vs-untested-features))
+- **Complete Colleague Presence:** All colleagues from the company phonebook with live status (Available, Busy, Away, DND, Offline) — verified working with 30 entries via ComSocket
+- **Detailed Call Journal:** Incoming, outgoing, and missed calls with duration, date, and contact name — verified working with 20 entries via ComSocket
+- **Voicemail:** Visual voicemail with message count and remote inquiry (implemented, playback not live-tested)
 - **Contacts:** Phonebook search and speed dial management
-- **Call Forwarding:** Configure unconditional, busy, and no-reply forwarding rules
+- **Call Forwarding:** Configure unconditional, busy, and no-reply forwarding rules — verified config reads correctly
 - **Audio Configuration:** Headset/speakerphone mode, microphone/speaker volume, mute
 - **Modern UI:** German interface, dark mode, system tray integration
-- **Auto-Attach:** Detects running SwyxIt! session and connects automatically — no manual login
-- **Real-time Push Events:** ComSocket (SignalR) delivers instant line-state and presence updates
+- **Auto-Attach:** Detects running SwyxIt! session and connects automatically — verified working
+- **Real-time Push Events:** ComSocket (SignalR) delivers instant line-state and presence updates (wiring verified, live events not observed during testing)
 
 ### Architecture (Hybrid: COM + ComSocket)
 
@@ -178,17 +178,37 @@ System, Call, Presence, Audio, Contact, History, Voicemail, Forwarding, Conferen
 ### LineState Mapping
 0=Inactive, 3=Ringing, 4=Dialing, 8=Active, 9=OnHold, 12=Terminated
 
-## Known Limitations
+## Verified vs. Untested Features
 
+To be transparent about what's actually been tested vs. what's implemented but not yet verified:
+
+### ✅ Verified Working (live-tested via CDP automation, 2026-07-13)
+- **Auto-Attach:** Login form skipped, main UI loads directly
+- **ComSocket (SignalR):** Connects to SwyxItHub on port 12042
+- **Presence View:** 30 colleagues from company phonebook with presence states
+- **Call History:** 20 journal entries with All/Incoming/Outgoing/Missed tabs
+- **Phone Dialer:** Keypad, line status (Line 1/2), Anrufen button
+- **Settings:** Audio mode, forwarding config, theme, line count
+- **API calls:** `cs.getPhoneBook`, `cs.getCallJournal`, `cs.getForwarding`, `getLines`, `getSystemInfo` all return correct data
+
+### ⚠️ Implemented but NOT Live-Tested
+- **Outbound calls (Dial → Answer → Hangup):** The COM `dial` method is wired up and `getSystemInfo` confirms `serverUp=true`, but no actual phone call was made during testing
+- **Inbound calls (Incoming call notification):** Event handlers exist, but no test call was received
+- **Voicemail playback:** The view renders, but audio playback was not tested
+- **Conference/Transfer/Hold during active call:** COM methods exist (`createConference`, `transfer`, `hold`), not tested with a live call
+- **DTMF during call:** Implemented, not tested
+- **Recording start/stop:** Implemented, not tested
+- **Real-time push events (lineStateChanged, userDataChanged):** Event wiring exists, but no status change was observed during testing
+- **Teams Graph API login:** The OAuth flow is implemented, but the login button was not clicked during testing
+
+### Known Limitations
 - Windows only (requires Swyx COM components + CLMgr)
 - Requires a running SwyxIt! session (Auto-Attach mode)
 - Teams write not supported from client (use server-side SwyxWare sync)
 - Call journal limited to 20 most recent entries (ComSocket paging)
+- `teams.local.getTeamsPresence` bridge method is not yet implemented (frontend will show an error in the Teams settings section)
 
 ## Build Notes
-
-### Google Drive / Cloud-Sync Folders
-The .NET SDK's `CreateAppHost` task uses MemoryMappedFiles, which fail on Google Drive Stream and similar cloud-sync filesystems. The included `scripts/build-bridge.ps1` automatically copies the bridge source to a local temp directory before building to work around this.
 
 ### x86 Requirement
 The bridge must be compiled as **x86** because CLMgr COM is a 32-bit server. The `PlatformTarget=x86` setting in the csproj enforces this. The Electron installer is also built for `ia32`.
