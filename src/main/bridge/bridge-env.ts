@@ -85,12 +85,16 @@ function findEnvFile(): string | null {
   const packagedRoot = path.dirname(app.getPath('exe'));
   const packagedEnv = path.join(packagedRoot, '.env');
 
+  // userData folder (AppData\Roaming\SwyxConnect) — writable without admin rights
+  const userDataEnv = path.join(app.getPath('userData'), '.env');
+
   // Also check resources/ (where electron-builder copies extra files)
   const resourcesEnv = app.isPackaged
     ? path.join(process.resourcesPath, '.env')
     : null;
 
-  const candidates = [devEnv, packagedEnv];
+  // Priority: dev root > userData > packaged > resources
+  const candidates = [devEnv, userDataEnv, packagedEnv];
   if (resourcesEnv) candidates.push(resourcesEnv);
 
   for (const candidate of candidates) {
