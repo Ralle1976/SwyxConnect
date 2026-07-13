@@ -1,6 +1,6 @@
 {
   "name": "swyxconnect",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Modern Swyx Softphone - Electron + React + COM Bridge",
   "main": "./out/main/index.js",
   "author": "Ralle1976",
