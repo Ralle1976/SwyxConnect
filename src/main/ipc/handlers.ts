@@ -41,9 +41,15 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_SESSION_STATUS, async (): Promise<AuthSessionInfo> => {
-    // If the bridge auto-attached to an existing SwyxIt! session, report it as authenticated
+    // If we captured a bridgeState event with username, use that
     if (attachedSession) {
       return attachedSession;
+    }
+    // Fallback: if the bridge is connected at all, treat as authenticated.
+    // The bridge only reaches Connected state after a successful RC-tunnel login
+    // or Auto-Attach — both mean the user has a valid session.
+    if (bridgeManager.getState() === BridgeState.Connected) {
+      return { isAuthenticated: true };
     }
     return { isAuthenticated: false };
   });
@@ -258,8 +264,9 @@ export function registerIpcHandlers(
           params.state === 'connected' ? BridgeState.Connected : BridgeState.Disconnected;
         win.webContents.send(IPC_CHANNELS.BRIDGE_STATE_CHANGED, mappedState);
 
-        // Auto-Attach: bridge connected to an existing SwyxIt! session
-        if (params.mode === 'attached' && params.username) {
+        // Both Auto-Attach (mode=attached) AND CLI-Login (state=connected with username)
+        // should skip the login form and mark the session as authenticated.
+        if (params.state === 'connected' && params.username) {
           attachedSession = {
             isAuthenticated: true,
             server: params.server,
