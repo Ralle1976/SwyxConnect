@@ -23,11 +23,27 @@ public sealed class AudioManager
         string headsetCapture = "";
         string speakerPlayback = "";
 
+        // Selected device names (singular properties)
         try { handsfreePlayback = (string)(com.DispHandsfreeDevice ?? ""); } catch { }
         try { handsfreeCapture  = (string)(com.DispHandsfreeCaptureDevice ?? ""); } catch { }
         try { headsetPlayback   = (string)(com.DispHeadsetDevice ?? ""); } catch { }
         try { headsetCapture    = (string)(com.DispHeadsetCaptureDevice ?? ""); } catch { }
         try { speakerPlayback   = (string)(com.DispSpeakerDevice ?? ""); } catch { }
+
+        // If no device is selected, try to auto-select from available collections.
+        // SwyxIt! does this at startup; we replicate it here for standalone mode.
+        if (string.IsNullOrEmpty(handsfreePlayback))
+        {
+            string autoPlayback = "";
+            string autoCapture = "";
+            AutoSelectAudioDevices(com, out autoPlayback, out autoCapture);
+            if (!string.IsNullOrEmpty(autoPlayback))
+            {
+                handsfreePlayback = autoPlayback;
+                handsfreeCapture = autoCapture;
+                Logging.Info($"AudioManager: Auto-selected HF playback='{autoPlayback}', capture='{autoCapture}'");
+            }
+        }
 
         Logging.Info($"AudioManager: Geräte abgefragt: HF={handsfreePlayback}, HS={headsetPlayback}");
 
@@ -37,6 +53,92 @@ public sealed class AudioManager
             headset   = new { playback = headsetPlayback,   capture = headsetCapture },
             speaker   = new { playback = speakerPlayback }
         };
+    }
+
+    /// <summary>
+    /// Queries the Plural collection properties to enumerate all available audio devices.
+    /// If devices are found, selects the first one as the default.
+    /// </summary>
+    private void AutoSelectAudioDevices(dynamic com, out string playback, out string capture)
+    {
+        playback = "";
+        capture = "";
+
+        try
+        {
+            // DispHandsetDevices returns a collection of available playback device names
+            var playbackDevices = com.DispHandsetDevices;
+            if (playbackDevices != null)
+            {
+                // Try to iterate the collection
+                try
+                {
+                    var count = (int)playbackDevices.Count;
+                    Logging.Info($"AudioManager: Available playback devices: {count}");
+                    if (count > 0)
+                    {
+                        playback = (string)playbackDevices.Item(0);
+                        Logging.Info($"AudioManager: Selected playback device[0]: '{playback}'");
+                    }
+                }
+                catch
+                {
+                    // Maybe it's an array or comma-separated string
+                    try { playback = (string)playbackDevices; } catch { }
+                    if (!string.IsNullOrEmpty(playback) && playback.Contains(','))
+                        playback = playback.Split(',')[0].Trim();
+                }
+            }
+        }
+        catch (Exception ex) { Logging.Warn($"AudioManager: DispHandsetDevices failed: {ex.Message}"); }
+
+        try
+        {
+            // DispHandsfreeCaptureDevices returns capture device names
+            var captureDevices = com.DispHandsfreeCaptureDevices;
+            if (captureDevices != null)
+            {
+                try
+                {
+                    var count = (int)captureDevices.Count;
+                    Logging.Info($"AudioManager: Available capture devices: {count}");
+                    if (count > 0)
+                    {
+                        capture = (string)captureDevices.Item(0);
+                        Logging.Info($"AudioManager: Selected capture device[0]: '{capture}'");
+                    }
+                }
+                catch
+                {
+                    try { capture = (string)captureDevices; } catch { }
+                    if (!string.IsNullOrEmpty(capture) && capture.Contains(','))
+                        capture = capture.Split(',')[0].Trim();
+                }
+            }
+        }
+        catch (Exception ex) { Logging.Warn($"AudioManager: DispHandsfreeCaptureDevices failed: {ex.Message}"); }
+
+        // If we found devices, set them as the selected device
+        if (!string.IsNullOrEmpty(playback))
+        {
+            try
+            {
+                com.DispHandsfreeDevice = playback;
+                Logging.Info($"AudioManager: Set DispHandsfreeDevice='{playback}'");
+            }
+            catch (Exception ex) { Logging.Warn($"AudioManager: Set HF playback failed: {ex.Message}"); }
+        }
+        if (!string.IsNullOrEmpty(capture))
+        {
+            try
+            {
+                com.DispHandsfreeCaptureDevice = capture;
+                Logging.Info($"AudioManager: Set DispHandsfreeCaptureDevice='{capture}'");
+            }
+            catch (Exception ex) { Logging.Warn($"AudioManager: Set HF capture failed: {ex.Message}"); }
+        }
+
+        return;
     }
 
     public object SetAudioDevice(string deviceType, string playback, string? capture)
