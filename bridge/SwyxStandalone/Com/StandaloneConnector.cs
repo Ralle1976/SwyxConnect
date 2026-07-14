@@ -132,20 +132,33 @@ public sealed class StandaloneConnector : IDisposable
 
         try
         {
-            // Step 1: Initialize CLMgr server connection.
-            // DispInitEx is required for fresh CLMgr instances (standalone mode without SwyxIt!).
+            // Step 1: Initialize CLMgr — THIS triggers audio plugin loading!
+            // DispInit (memid=1) calls CCLineMgr::Init → RegisterPlugins → ReadPlugins
+            // which loads GenericDevicePlugin.dll and enumerates WASAPI devices.
+            // Without this call, DispHandsetDevices/DispHandsfreeDevices are empty
+            // and calls fail because there are no audio devices bound to lines.
             try
             {
-                Logging.Info($"StandaloneConnector: DispInitEx('{server}', '{backupServer}')...");
-                int initResult = (int)_clmgr.DispInitEx(server, backupServer ?? "");
-                Logging.Info($"StandaloneConnector: DispInitEx returned {initResult}");
+                Logging.Info($"StandaloneConnector: DispInit('{server}')...");
+                int initResult = (int)_clmgr.DispInit(server);
+                Logging.Info($"StandaloneConnector: DispInit returned 0x{initResult:X8}");
             }
             catch (Exception initEx)
             {
-                // DispInit may fail if CLMgr is already initialized (SwyxIt! running).
-                // Non-fatal — RegisterUserEx may still succeed.
-                Logging.Warn($"StandaloneConnector: DispInitEx non-fatal error (may be already initialized): {initEx.Message}");
+                Logging.Warn($"StandaloneConnector: DispInit error: {initEx.Message}");
             }
+
+            // Also call DispInitEx for backup server config (non-fatal if it fails)
+            try
+            {
+                int initResultEx = (int)_clmgr.DispInitEx(server, backupServer ?? "");
+                Logging.Info($"StandaloneConnector: DispInitEx returned 0x{initResultEx:X8} (non-fatal)");
+            }
+            catch { }
+
+            // Give ReadPlugins + CoCreateInstance time to finish loading audio plugins
+            Logging.Info("StandaloneConnector: Waiting 2s for audio plugins to load...");
+            System.Threading.Thread.Sleep(2000);
 
             // Step 2: Register user with verified 7-arg void signature.
             _clmgr.RegisterUserEx(
@@ -229,17 +242,30 @@ public sealed class StandaloneConnector : IDisposable
 
         try
         {
-            // Initialize CLMgr for tunnel mode
+            // Initialize CLMgr — DispInit triggers audio plugin loading!
+            // DispInit (memid=1) calls CCLineMgr::Init → ReadPlugins → audio devices
             try
             {
-                Logging.Info($"StandaloneConnector: DispInitEx('{internalServer}', '')...");
-                int initResult = (int)_clmgr.DispInitEx(internalServer, internalBackupServer ?? "");
-                Logging.Info($"StandaloneConnector: DispInitEx returned {initResult} (non-fatal)");
+                Logging.Info($"StandaloneConnector: DispInit('{internalServer}')...");
+                int initResult = (int)_clmgr.DispInit(internalServer);
+                Logging.Info($"StandaloneConnector: DispInit returned 0x{initResult:X8}");
             }
             catch (Exception initEx)
             {
-                Logging.Warn($"StandaloneConnector: DispInitEx non-fatal: {initEx.Message}");
+                Logging.Warn($"StandaloneConnector: DispInit error: {initEx.Message}");
             }
+
+            // Also call DispInitEx for backup server config
+            try
+            {
+                int initResultEx = (int)_clmgr.DispInitEx(internalServer, internalBackupServer ?? "");
+                Logging.Info($"StandaloneConnector: DispInitEx returned 0x{initResultEx:X8} (non-fatal)");
+            }
+            catch { }
+
+            // Give audio plugins time to load
+            Logging.Info("StandaloneConnector: Waiting 2s for audio plugins...");
+            System.Threading.Thread.Sleep(2000);
 
             // Build the TLS tunnel via RegisterUserConnector4UC
             // thumbprint = null (password auth, no certificate)
