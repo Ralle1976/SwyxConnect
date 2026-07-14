@@ -49,9 +49,44 @@ public sealed class SwyxItSuppressor : IDisposable
     public void Start()
     {
         DisableStartupShortcut();
-        SuppressClassicSwyxIt();
-        _timer.Start();
-        Logging.Info("SwyxItSuppressor: Active — classic SwyxIt! will be suppressed.");
+
+        // If SwyxIt! is NOT running, start it briefly to initialize CLMgr
+        // (server tunnel, audio devices, config), then kill it after 20s.
+        var swyxIt = Process.GetProcessesByName(ClassicProcessName).FirstOrDefault();
+        if (swyxIt == null)
+        {
+            Logging.Info("SwyxItSuppressor: SwyxIt! not running. Starting it briefly for CLMgr initialization...");
+            try
+            {
+                var swyxItExe = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                    "Swyx", "SwyxIt!", "SwyxIt!.exe");
+                if (File.Exists(swyxItExe))
+                {
+                    Process.Start(swyxItExe, "/M");
+                    Logging.Info("SwyxItSuppressor: SwyxIt! started, waiting 20s for initialization...");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logging.Warn($"SwyxItSuppressor: Could not start SwyxIt! for init: {ex.Message}");
+            }
+        }
+        else
+        {
+            Logging.Info($"SwyxItSuppressor: SwyxIt! already running (PID={swyxIt.Id}). Will kill after init delay.");
+        }
+
+        // Wait 20s for SwyxIt to fully initialize CLMgr, then kill it
+        var initDelay = new System.Timers.Timer(20000) { AutoReset = false };
+        initDelay.Elapsed += (s, e) =>
+        {
+            SuppressClassicSwyxIt();
+            _timer.Start();
+            Logging.Info("SwyxItSuppressor: Active — SwyxIt! killed after init, suppression timer started.");
+            initDelay.Dispose();
+        };
+        initDelay.Start();
     }
 
     public void Stop()

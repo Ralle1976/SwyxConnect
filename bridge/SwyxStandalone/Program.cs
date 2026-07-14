@@ -107,9 +107,15 @@ static class Program
         _audioManager = new AudioManager(_connector);
 
         // Suppress classic SwyxIt! — it pops up on call events and conflicts with our UI.
-        // Kill any running instance + disable the Startup shortcut.
+        // SwyxItSuppressor starts SwyxIt! briefly (20s) to initialize CLMgr, then kills it.
         _swyxItSuppressor = new SwyxItSuppressor();
         _swyxItSuppressor.Start();
+
+        // Wait for SwyxIt initialization to complete before attempting login.
+        // CLMgr needs SwyxIt to establish the server tunnel and audio devices.
+        Logging.Info("InitializeBridge: Waiting 22s for SwyxIt/CLMgr initialization...");
+        System.Threading.Thread.Sleep(22000);
+        Logging.Info("InitializeBridge: Init wait complete, proceeding with login.");
 
         _callHandler      = new CallHandler(_lineManager);
         _presenceHandler  = new PresenceHandler(_connector);
@@ -130,170 +136,79 @@ static class Program
         _comSocketHandler = new ComSocketHandler(_comSocket);
 
         // Wire ComSocket events → JSON-RPC push events to Electron
-        _comSocket.LineStateChanged += data =>
-        {
-            JsonRpcEmitter.EmitEvent("cs.lineStateChanged", data);
-        };
-        _comSocket.LineDetailsChanged += data =>
-        {
-            JsonRpcEmitter.EmitEvent("cs.lineDetailsChanged", data);
-        };
-        _comSocket.UserDataChanged += data =>
-        {
-            JsonRpcEmitter.EmitEvent("cs.userDataChanged", data);
-        };
-        _comSocket.NotificationCallsChanged += data =>
-        {
-            JsonRpcEmitter.EmitEvent("cs.notificationCallsChanged", data);
-        };
+        _comSocket.LineStateChanged += data => JsonRpcEmitter.EmitEvent("cs.lineStateChanged", data);
+        _comSocket.LineDetailsChanged += data => JsonRpcEmitter.EmitEvent("cs.lineDetailsChanged", data);
+        _comSocket.UserDataChanged += data => JsonRpcEmitter.EmitEvent("cs.userDataChanged", data);
+        _comSocket.NotificationCallsChanged += data => JsonRpcEmitter.EmitEvent("cs.notificationCallsChanged", data);
 
-        if (!string.IsNullOrEmpty(argServer) && !string.IsNullOrEmpty(argUser) && !string.IsNullOrEmpty(argPass))
+        // === LOGIN ===
+        // After SwyxIt initialized CLMgr (and was killed), try to attach to the session.
+        // First try Auto-Attach (if SwyxIt left a valid session), then fall back to RC-Login.
+        try
         {
-            try
+            _connector.CreateComObject();
+            var com = _connector.GetCom();
+            int isLoggedIn = 0;
+            try { isLoggedIn = (int)com.DispIsLoggedIn; } catch { }
+            string server = "";
+            string user = "";
+            try { server = (string)(com.DispGetCurrentServer ?? ""); } catch { }
+            try { user = (string)(com.DispGetCurrentUser ?? ""); } catch { }
+
+            if (isLoggedIn != 0)
             {
-                _connector.CreateComObject();
+                // Auto-Attach: SwyxIt left a valid logged-in session
+                EventSink.Subscribe(_connector, _lineManager);
+                Logging.Info($"Standalone: Attached to existing session (user={user}, server={server}).");
 
-                // If a public server is specified, use RemoteConnector (tunnel) login.
-                // This builds the TLS tunnel to the public server, then registers the user.
+                // Auto-connect ComSocket
+                StartComSocket();
+
+                JsonRpcEmitter.EmitEvent("bridgeState", new
+                {
+                    state = "connected",
+                    server,
+                    username = user,
+                    mode = "attached"
+                });
+            }
+            else if (!string.IsNullOrEmpty(argServer) && !string.IsNullOrEmpty(argUser) && !string.IsNullOrEmpty(argPass))
+            {
+                // RC-Tunnel Login (SwyxIt didn't leave a session, or wasn't running)
                 if (!string.IsNullOrEmpty(argPublicServer))
                 {
                     Logging.Info($"Standalone: RC-Login mit PublicServer='{argPublicServer}'...");
                     _connector.LoginViaRemoteConnector(
-                        argPublicServer,
-                        argServer,
-                        argUser,
-                        argPass,
-                        argPublicBackupServer ?? "",
-                        argBackupServer ?? "",
-                        argAuthMode,
-                        ctiMaster: true);
+                        argPublicServer, argServer, argUser, argPass,
+                        argPublicBackupServer ?? "", argBackupServer ?? "",
+                        argAuthMode, ctiMaster: true);
                 }
                 else
                 {
-                    // Direct LAN login (no tunnel)
                     _connector.Login(argServer, argUser, argPass, argBackupServer ?? "", argAuthMode);
                 }
 
                 EventSink.Subscribe(_connector, _lineManager);
                 Logging.Info("Standalone: Via CLI-Args eingeloggt.");
-
-                // Auto-connect ComSocket (same as Auto-Attach mode)
-                Logging.Info("Standalone: Starting ComSocket discovery thread...");
-                var comSocketThread = new Thread(async () =>
-                {
-                    try
-                    {
-                        Logging.Info("Standalone: ComSocket thread entered, calling DiscoverPortAsync...");
-                        _comSocketPort = await ComSocketClient.DiscoverPortAsync();
-                        Logging.Info($"Standalone: ComSocket DiscoverPortAsync returned port={_comSocketPort}");
-                        if (_comSocketPort > 0)
-                        {
-                            await _comSocket!.ConnectAsync(_comSocketPort);
-                            Logging.Info($"Standalone: ComSocket connected on port {_comSocketPort}");
-                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = true, port = _comSocketPort });
-                        }
-                        else
-                        {
-                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, reason = "port-discovery-failed" });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logging.Error($"Standalone: ComSocket connect failed: {ex.Message}");
-                        JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, error = ex.Message });
-                    }
-                })
-                {
-                    IsBackground = true,
-                    Name = "ComSocketAutoConnect"
-                };
-                comSocketThread.Start();
+                StartComSocket();
 
                 JsonRpcEmitter.EmitEvent("bridgeState", new
                 {
-                    state    = "connected",
-                    server   = argServer,
+                    state = "connected",
+                    server = argServer,
                     username = argUser
                 });
             }
-            catch (Exception ex)
+            else
             {
-                Logging.Error($"CLI-Login fehlgeschlagen: {ex.Message}");
-                JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected", error = ex.Message });
-            }
-        }
-        else
-        {
-            // Attached mode: Try to auto-create COM object and check if SwyxIt! is already logged in.
-            // This allows the bridge to use an existing SwyxIt! session without explicit login.
-            try
-            {
-                _connector.CreateComObject();
-                var com = _connector.GetCom();
-                int isLoggedIn = 0;
-                string server = "";
-                string user = "";
-                try { isLoggedIn = (int)com.DispIsLoggedIn; } catch { }
-                try { server = (string)(com.DispGetCurrentServer ?? ""); } catch { }
-                try { user = (string)(com.DispGetCurrentUser ?? ""); } catch { }
-
-                if (isLoggedIn != 0)
-                {
-                    // SwyxIt! is running and logged in — attach to existing session
-                    EventSink.Subscribe(_connector, _lineManager);
-                    Logging.Info($"Standalone: Attached to existing session (user={user}, server={server}).");
-
-                    // Auto-connect ComSocket for rich data (all colleagues, push events)
-                    Logging.Info("Auto-Attach: Starting ComSocket discovery thread...");
-                    var comSocketThread = new Thread(async () =>
-                    {
-                        try
-                        {
-                            Logging.Info("Auto-Attach: ComSocket thread entered, calling DiscoverPortAsync...");
-                            _comSocketPort = await ComSocketClient.DiscoverPortAsync();
-                            Logging.Info($"Auto-Attach: ComSocket DiscoverPortAsync returned port={_comSocketPort}");
-                            if (_comSocketPort > 0)
-                            {
-                                await _comSocket!.ConnectAsync(_comSocketPort);
-                                Logging.Info($"Auto-Attach: ComSocket connected on port {_comSocketPort}");
-                                JsonRpcEmitter.EmitEvent("comSocketState", new { connected = true, port = _comSocketPort });
-                            }
-                            else
-                            {
-                                JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, reason = "port-discovery-failed" });
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logging.Error($"Auto-Attach: ComSocket connect failed: {ex.Message}");
-                            JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, error = ex.Message });
-                        }
-                    })
-                    {
-                        IsBackground = true,
-                        Name = "ComSocketAutoConnect"
-                    };
-                    comSocketThread.Start();
-
-                    JsonRpcEmitter.EmitEvent("bridgeState", new
-                    {
-                        state    = "connected",
-                        server,
-                        username = user,
-                        mode     = "attached"
-                    });
-                }
-                else
-                {
-                    Logging.Info("Standalone: COM created but not logged in. Waiting for 'login' JSON-RPC method.");
-                    JsonRpcEmitter.EmitEvent("bridgeState", new { state = "ready", info = "Send {method:'login',params:{server,username,password}} to connect." });
-                }
-            }
-            catch (Exception ex)
-            {
-                Logging.Warn($"Standalone: Auto-attach failed, waiting for login: {ex.Message}");
+                Logging.Info("Standalone: COM created but not logged in. Waiting for 'login' JSON-RPC method.");
                 JsonRpcEmitter.EmitEvent("bridgeState", new { state = "ready", info = "Send {method:'login',params:{server,username,password}} to connect." });
             }
+        }
+        catch (Exception ex)
+        {
+            Logging.Error($"Login fehlgeschlagen: {ex.Message}");
+            JsonRpcEmitter.EmitEvent("bridgeState", new { state = "disconnected", error = ex.Message });
         }
 
         _rpcServer = new JsonRpcServer(sta, DispatchRequest);
@@ -303,6 +218,39 @@ static class Program
             Name = "JsonRpcServer"
         };
         serverThread.Start();
+    }
+
+    private static void StartComSocket()
+    {
+        Logging.Info("Starting ComSocket discovery thread...");
+        var comSocketThread = new Thread(async () =>
+        {
+            try
+            {
+                _comSocketPort = await ComSocketClient.DiscoverPortAsync();
+                Logging.Info($"ComSocket DiscoverPortAsync returned port={_comSocketPort}");
+                if (_comSocketPort > 0)
+                {
+                    await _comSocket!.ConnectAsync(_comSocketPort);
+                    Logging.Info($"ComSocket connected on port {_comSocketPort}");
+                    JsonRpcEmitter.EmitEvent("comSocketState", new { connected = true, port = _comSocketPort });
+                }
+                else
+                {
+                    JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, reason = "port-discovery-failed" });
+                }
+            }
+            catch (Exception ex)
+            {
+                Logging.Error($"ComSocket connect failed: {ex.Message}");
+                JsonRpcEmitter.EmitEvent("comSocketState", new { connected = false, port = 0, error = ex.Message });
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "ComSocketAutoConnect"
+        };
+        comSocketThread.Start();
     }
 
     private static void DispatchRequest(JsonRpcRequest req)
