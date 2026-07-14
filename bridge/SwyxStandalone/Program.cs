@@ -111,11 +111,11 @@ static class Program
         _swyxItSuppressor = new SwyxItSuppressor();
         _swyxItSuppressor.Start();
 
-        // Wait for SwyxIt initialization to complete before attempting login.
-        // CLMgr needs SwyxIt to establish the server tunnel and audio devices.
-        Logging.Info("InitializeBridge: Waiting 22s for SwyxIt/CLMgr initialization...");
-        System.Threading.Thread.Sleep(22000);
-        Logging.Info("InitializeBridge: Init wait complete, proceeding with login.");
+        // The SwyxItSuppressor may have started SwyxIt! for initialization.
+        // Give CLMgr a moment to be ready, then try to connect.
+        Logging.Info("InitializeBridge: Waiting 5s for CLMgr to be ready...");
+        System.Threading.Thread.Sleep(5000);
+        Logging.Info("InitializeBridge: Proceeding with login.");
 
         _callHandler      = new CallHandler(_lineManager);
         _presenceHandler  = new PresenceHandler(_connector);
