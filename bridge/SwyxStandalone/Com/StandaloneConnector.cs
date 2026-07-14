@@ -41,6 +41,58 @@ public sealed class StandaloneConnector : IDisposable
     public int AuthMode => _authMode;
     public bool CtiMaster => _ctiMaster;
 
+    /// <summary>
+    /// Reads audio device names from ClientConfig and applies them to CLMgr's active devices.
+    /// Must be called AFTER a successful login — CLMgr only binds devices to lines post-login.
+    /// RE 2026-07-15: ClientConfig (DispClientConfig, DispId 100) stores device config,
+    /// DispHandsfreeDevice (DispId 127) activates them.
+    /// </summary>
+    public void ApplyAudioDevices()
+    {
+        if (_clmgr == null) return;
+
+        try
+        {
+            var cfg = _clmgr.DispClientConfig;
+            if (cfg == null) return;
+
+            string hfPlayback = "", hfCapture = "", hsPlayback = "", hsCapture = "";
+            try { hfPlayback = (string)(cfg.HandsfreeDevice ?? ""); } catch { }
+            try { hfCapture = (string)(cfg.HandsfreeCaptureDevice ?? ""); } catch { }
+            try { hsPlayback = (string)(cfg.HeadsetDevice ?? ""); } catch { }
+            try { hsCapture = (string)(cfg.HeadsetCaptureDevice ?? ""); } catch { }
+
+            Logging.Info($"ApplyAudioDevices: Config HF={hfPlayback}/{hfCapture}, HS={hsPlayback}/{hsCapture}");
+
+            if (!string.IsNullOrEmpty(hfPlayback))
+            {
+                try { _clmgr.DispHandsfreeDevice = hfPlayback; Logging.Info($"ApplyAudioDevices: DispHandsfreeDevice='{hfPlayback}'"); }
+                catch (Exception ex) { Logging.Warn($"ApplyAudioDevices: Set HF playback failed: {ex.Message}"); }
+            }
+            if (!string.IsNullOrEmpty(hfCapture))
+            {
+                try { _clmgr.DispHandsfreeCaptureDevice = hfCapture; Logging.Info($"ApplyAudioDevices: DispHandsfreeCaptureDevice='{hfCapture}'"); }
+                catch (Exception ex) { Logging.Warn($"ApplyAudioDevices: Set HF capture failed: {ex.Message}"); }
+            }
+
+            // Set audio mode to handsfree
+            try { _clmgr.DispDefaultAudioMode = 2; Logging.Info("ApplyAudioDevices: Set DispDefaultAudioMode=2 (Handsfree)"); }
+            catch { }
+
+            // Verify
+            try
+            {
+                string verifyHf = (string)(_clmgr.DispHandsfreeDevice ?? "");
+                Logging.Info($"ApplyAudioDevices: Verify DispHandsfreeDevice='{verifyHf}'");
+            }
+            catch { }
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"ApplyAudioDevices: Failed: {ex.Message}");
+        }
+    }
+
     public StandaloneConnector()
     {
         _instance = this;
@@ -82,18 +134,54 @@ public sealed class StandaloneConnector : IDisposable
                 Logging.Warn($"StandaloneConnector: DispInit non-fatal: {initEx.Message}");
             }
 
-            // Set LoginDeviceType — this tells CLMgr "I am a phone client, load audio for me"
-            // SwyxIt! does this at startup: "Setting LoginDeviceType in ClMgr to"
-            // RE 2026-07-15: LoginDeviceType is a COM property on CLMgr (CDS-based).
-            // DeviceType values (from SwyxIt! strings): likely 0=SwyxIt, 1=SwyxPhone, etc.
+            // Set LoginDeviceType via IClientConfig (DispClientConfig, DispId 100)
+            // RE 2026-07-15: LoginDeviceType is on IClientConfig (DispId 24), NOT on CLMgr directly.
+            // DispClientConfig returns the config sub-object where LoginDeviceType lives.
+            // This tells CLMgr "I am a phone client" → triggers audio device plugin loading.
             try
             {
-                _clmgr.LoginDeviceType = 0; // 0 = SwyxIt-style client
-                Logging.Info("StandaloneConnector: LoginDeviceType set to 0 (client mode)");
+                var clientConfig = _clmgr.DispClientConfig;
+                if (clientConfig != null)
+                {
+                    // LoginDeviceType (DispId 24): 0=SwyxIt client, tells CLMgr to init audio
+                    clientConfig.LoginDeviceType = 0;
+                    Logging.Info("StandaloneConnector: LoginDeviceType set to 0 via DispClientConfig");
+
+                    // Read configured audio devices from ClientConfig
+                    string cfgHfPlayback = "";
+                    string cfgHfCapture = "";
+                    string cfgHsPlayback = "";
+                    string cfgHsCapture = "";
+                    try { cfgHfPlayback = (string)(clientConfig.HandsfreeDevice ?? ""); } catch { }
+                    try { cfgHfCapture = (string)(clientConfig.HandsfreeCaptureDevice ?? ""); } catch { }
+                    try { cfgHsPlayback = (string)(clientConfig.HeadsetDevice ?? ""); } catch { }
+                    try { cfgHsCapture = (string)(clientConfig.HeadsetCaptureDevice ?? ""); } catch { }
+                    Logging.Info($"StandaloneConnector: ClientConfig HF={cfgHfPlayback}/{cfgHfCapture}, HS={cfgHsPlayback}/{cfgHsCapture}");
+
+                    // NOW: Set the active audio devices on CLMgr via DispHandsfreeDevice etc.
+                    // This binds the devices to the phone lines (ClientConfig only stores config,
+                    // DispHandsfreeDevice activates them).
+                    if (!string.IsNullOrEmpty(cfgHfPlayback))
+                    {
+                        try { _clmgr.DispHandsfreeDevice = cfgHfPlayback; Logging.Info($"StandaloneConnector: Set DispHandsfreeDevice='{cfgHfPlayback}'"); } catch (Exception ex) { Logging.Warn($"Set HF playback: {ex.Message}"); }
+                    }
+                    if (!string.IsNullOrEmpty(cfgHfCapture))
+                    {
+                        try { _clmgr.DispHandsfreeCaptureDevice = cfgHfCapture; Logging.Info($"StandaloneConnector: Set DispHandsfreeCaptureDevice='{cfgHfCapture}'"); } catch (Exception ex) { Logging.Warn($"Set HF capture: {ex.Message}"); }
+                    }
+                    if (!string.IsNullOrEmpty(cfgHsPlayback))
+                    {
+                        try { _clmgr.DispHeadsetDevice = cfgHsPlayback; Logging.Info($"StandaloneConnector: Set DispHeadsetDevice='{cfgHsPlayback}'"); } catch { }
+                    }
+                    if (!string.IsNullOrEmpty(cfgHsCapture))
+                    {
+                        try { _clmgr.DispHeadsetCaptureDevice = cfgHsCapture; Logging.Info($"StandaloneConnector: Set DispHeadsetCaptureDevice='{cfgHsCapture}'"); } catch { }
+                    }
+                }
             }
             catch (Exception dtEx)
             {
-                Logging.Warn($"StandaloneConnector: LoginDeviceType failed: {dtEx.Message}");
+                Logging.Warn($"StandaloneConnector: DispClientConfig/LoginDeviceType failed: {dtEx.Message}");
             }
 
             // Give async ReadPlugins + CoCreateInstance time to finish

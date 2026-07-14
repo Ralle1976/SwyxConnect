@@ -161,6 +161,9 @@ static class Program
                 EventSink.Subscribe(_connector, _lineManager);
                 Logging.Info($"Standalone: Attached to existing session (user={user}, server={server}).");
 
+                // Apply audio devices after attach
+                _connector.ApplyAudioDevices();
+
                 // Auto-connect ComSocket
                 StartComSocket();
 
@@ -190,6 +193,10 @@ static class Program
 
                 EventSink.Subscribe(_connector, _lineManager);
                 Logging.Info("Standalone: Via CLI-Args eingeloggt.");
+
+                // Apply audio devices AFTER login — CLMgr only binds devices post-login
+                _connector.ApplyAudioDevices();
+
                 StartComSocket();
 
                 JsonRpcEmitter.EmitEvent("bridgeState", new
