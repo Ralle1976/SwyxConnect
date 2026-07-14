@@ -71,20 +71,29 @@ public sealed class StandaloneConnector : IDisposable
             _clmgr = Activator.CreateInstance(comType);
             Logging.Info("StandaloneConnector: COM-Objekt erfolgreich erstellt.");
 
-            // Call DispInit IMMEDIATELY after COM creation. This triggers:
-            //   CCLineMgr::Init → RegisterPlugins → ReadPlugins → audio device loading
-            // Without this, DispHandsfreeDevices etc. return empty collections and calls fail.
-            // RE finding 2026-07-14: DispInit (memid=1) is the trigger, NOT DispInitEx (memid=41).
+            // Call DispInit (triggers CCLineMgr::Init → ReadPlugins → audio device loading)
             try
             {
                 int hr = (int)_clmgr.DispInit("");
                 Logging.Info($"StandaloneConnector: DispInit returned 0x{hr:X8}");
-                // If DispInit returns E_NOTIMPL, CLMgr may already be initialized (SwyxIt! running).
-                // That's fine — the plugins are already loaded in that case.
             }
             catch (Exception initEx)
             {
                 Logging.Warn($"StandaloneConnector: DispInit non-fatal: {initEx.Message}");
+            }
+
+            // Set LoginDeviceType — this tells CLMgr "I am a phone client, load audio for me"
+            // SwyxIt! does this at startup: "Setting LoginDeviceType in ClMgr to"
+            // RE 2026-07-15: LoginDeviceType is a COM property on CLMgr (CDS-based).
+            // DeviceType values (from SwyxIt! strings): likely 0=SwyxIt, 1=SwyxPhone, etc.
+            try
+            {
+                _clmgr.LoginDeviceType = 0; // 0 = SwyxIt-style client
+                Logging.Info("StandaloneConnector: LoginDeviceType set to 0 (client mode)");
+            }
+            catch (Exception dtEx)
+            {
+                Logging.Warn($"StandaloneConnector: LoginDeviceType failed: {dtEx.Message}");
             }
 
             // Give async ReadPlugins + CoCreateInstance time to finish
