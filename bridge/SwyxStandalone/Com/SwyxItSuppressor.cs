@@ -50,21 +50,39 @@ public sealed class SwyxItSuppressor : IDisposable
     {
         DisableStartupShortcut();
 
-        // Only kill SwyxIt if it's ALREADY running. Do NOT start it ourselves.
-        // In standalone mode (EnablePowerDialMode=1), CLMgr initializes audio devices itself.
-        // Starting SwyxIt would interfere with the RC tunnel login.
+        // v1.4.0 strategy: SwyxIt! is NEEDED for audio device initialization.
+        // We hide its window (SW_HIDE) instead of killing it.
+        // This way CLMgr has audio devices, calls work, but the user never sees SwyxIt!.
         var swyxIt = Process.GetProcessesByName(ClassicProcessName).FirstOrDefault();
-        if (swyxIt != null)
+        if (swyxIt == null)
         {
-            Logging.Info($"SwyxItSuppressor: SwyxIt! running (PID={swyxIt.Id}). Killing it now.");
-            SuppressClassicSwyxIt();
-            _timer.Start();
-            Logging.Info("SwyxItSuppressor: Active.");
+            // SwyxIt! not running — start it hidden, it will initialize CLMgr audio
+            Logging.Info("SwyxItSuppressor: SwyxIt! not running. Starting it hidden for audio init...");
+            try
+            {
+                var swyxItExe = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                    "Swyx", "SwyxIt!", "SwyxIt!.exe");
+                if (File.Exists(swyxItExe))
+                {
+                    Process.Start(swyxItExe, "/M");
+                    Logging.Info("SwyxItSuppressor: SwyxIt! started with /M (minimized).");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logging.Warn($"SwyxItSuppressor: Could not start SwyxIt!: {ex.Message}");
+            }
         }
         else
         {
-            Logging.Info("SwyxItSuppressor: SwyxIt! not running. Standalone mode — not starting it.");
+            Logging.Info($"SwyxItSuppressor: SwyxIt! already running (PID={swyxIt.Id}).");
         }
+
+        // Start hiding timer — hide SwyxIt! window every 2s if it becomes visible
+        // (call events can make SwyxIt! un-minimize itself)
+        _timer.Start();
+        Logging.Info("SwyxItSuppressor: Active (HIDE mode — SwyxIt! kept alive but invisible).");
     }
 
     public void Stop()
@@ -73,9 +91,12 @@ public sealed class SwyxItSuppressor : IDisposable
         Logging.Info("SwyxItSuppressor: Stopped.");
     }
 
+    private const int SW_MINIMIZE = 6;
+
     /// <summary>
-    /// Kills any running classic SwyxIt! process and hides its window first
-    /// to avoid a brief flash of the window.
+    /// Hides any visible SwyxIt! window (SW_HIDE). Does NOT kill the process.
+    /// SwyxIt! must stay alive to maintain CLMgr audio device initialization.
+    /// Call events can make SwyxIt! un-minimize — this keeps it hidden.
     /// </summary>
     private static void SuppressClassicSwyxIt()
     {
@@ -86,28 +107,23 @@ public sealed class SwyxItSuppressor : IDisposable
             {
                 try
                 {
-                    // Hide window first to avoid visual flash
+                    // Refresh to get current window handle
+                    proc.Refresh();
+
+                    // Hide the window if it's visible
                     if (proc.MainWindowHandle != IntPtr.Zero)
                     {
                         ShowWindow(proc.MainWindowHandle, SW_HIDE);
                     }
-                    proc.Kill();
-                    Logging.Info($"SwyxItSuppressor: Classic SwyxIt! killed (PID={proc.Id}).");
                 }
-                catch (Exception ex)
-                {
-                    Logging.Warn($"SwyxItSuppressor: Failed to kill PID={proc.Id}: {ex.Message}");
-                }
+                catch { }
                 finally
                 {
                     try { proc.Dispose(); } catch { }
                 }
             }
         }
-        catch (Exception ex)
-        {
-            Logging.Warn($"SwyxItSuppressor: Error during suppression: {ex.Message}");
-        }
+        catch { }
     }
 
     /// <summary>

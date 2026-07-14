@@ -111,10 +111,17 @@ static class Program
         _swyxItSuppressor = new SwyxItSuppressor();
         _swyxItSuppressor.Start();
 
-        // The SwyxItSuppressor may have started SwyxIt! for initialization.
-        // Give CLMgr a moment to be ready, then try to connect.
-        Logging.Info("InitializeBridge: Waiting 5s for CLMgr to be ready...");
-        System.Threading.Thread.Sleep(5000);
+        // v1.4.0: SwyxItSuppressor starts SwyxIt! hidden. Give it time to login
+        // and initialize CLMgr (server tunnel + audio devices), then we Auto-Attach.
+        // If SwyxIt! was already running, we just need a short delay.
+        var swyxItRunning = System.Diagnostics.Process.GetProcessesByName("SwyxIt!").Any();
+        int waitMs = swyxItRunning ? 5000 : 15000; // 15s if we just started it, 5s if already running
+        Logging.Info($"InitializeBridge: Waiting {waitMs/1000}s for SwyxIt/CLMgr (SwyxIt running={swyxItRunning})...");
+        for (int i = 0; i < waitMs / 1000; i++)
+        {
+            System.Threading.Thread.Sleep(1000);
+            Application.DoEvents();
+        }
         Logging.Info("InitializeBridge: Proceeding with login.");
 
         _callHandler      = new CallHandler(_lineManager);
