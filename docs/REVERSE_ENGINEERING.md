@@ -798,7 +798,7 @@ CLMgr.exe enthält die **komplette Telefonie-Stack**:
 
 SwyxIt!.exe enthält **nur OpenSSL-TLS-Strings** (für HTTPS/Cert-Validierung) und UI-Code. Es hat **keine eigene Telefonie-Stack**.
 
-**Schlussfolgerung:** SwyxIt! ist eine reine GUI-Hülle. Unsere .NET-Bridge, die an CLMgr andockt, hat die volle Telefonie-Stack — SwyxIt! wird nicht benötigt.
+**Schlussfolgerung:** SwyxIt! is NOT needed if DispInit is called correctly. The audio plugins are loaded by CLMgr itself via ReadPlugins.
 
 ### RemoteConnector / Tunnel-Mechanismus (bewiesen funktionsfähig)
 
@@ -917,6 +917,114 @@ Die `SwyxItSuppressor`-Komponente in unserer Bridge:
 
 ---
 
-*Dokument erstellt: 2026-03-12, erweitert: 2026-07-13*
+## 6. Audio Device Plugin Architektur (RE 2026-07-14)
+
+### 6.1 DispInit (memid=1) ist DER Trigger für das Audio-Plugin-Loading
+
+`DispInit(serverName)` ist die einzige Methode, die die Audio-Plugin-Kette in Gang setzt. Die Aufrufkette ist:
+
+```
+DispInit(serverName)
+  → CCLineMgr::Init
+    → CLineMgr::RegisterPlugins
+      → CAudioDeviceManager::ReadPlugins
+```
+
+`ReadPlugins` liest den Registry-Key:
+```
+HKLM\SOFTWARE\WOW6432Node\Swyx\Client Line Manager\CurrentVersion\Options\AudioDevicePlugIns
+```
+
+Für jeden Subkey mit `Enabled=1`:
+1. `CoCreateInstance(<subkeyName als ProgID>)`
+2. `IAudioDeviceCollection.Initialize(BSTR)` auf dem resultierenden Objekt
+
+### 6.2 Die Plugin-Kette (vollständiger Flow)
+
+```
+CLMgr.exe
+  → CAudioDeviceManager::ReadPlugins
+    → CoCreateInstance("GenericDevicePlugin.GenericDeviceCollection")
+      → GenericDevicePlugin.dll
+        → CGenericDeviceCollection
+          → IAudioDeviceCollection.Initialize()
+            → CoCreateInstance(CLSID_AudioVolumeControl)
+              → AudioVolumeControl.dll
+                → DSOUND.dll (DirectSoundCreate + DirectSoundEnumerateA)
+                → WINMM.dll  (mixer APIs)
+              → Returns enumerated device names
+                (e.g. "Speakers (Realtek(R) Audio)")
+```
+
+### 6.3 Complete DispId Reference Table (memid 101-148)
+
+| memid | Name | Access |
+|---|---|---|
+| 101 | DispAudioMode | get/set |
+| 103 | DispHandsetAvailable | - |
+| 104 | DispHeadsetAvailable | - |
+| 105 | DispHandsfreeAvailable | - |
+| 106 | DispOpenListeningAvailable | - |
+| 107 | DispHandsetDevices | get-only (collection) |
+| 108 | DispHandsetCaptureDevices | get-only (collection) |
+| 109 | DispHeadsetDevices | get-only (collection) |
+| 110 | DispHeadsetCaptureDevices | get-only (collection) |
+| 111 | DispHandsfreeDevices | get-only (collection) |
+| 112 | DispHandsfreeCaptureDevices | get-only (collection) |
+| 113 | DispOpenListeningDevices | get-only (collection) |
+| 114 | DispRingingDevices | get-only (collection) |
+| 123 | DispHandsetDevice | set-only |
+| 124 | DispHandsetCaptureDevice | set-only |
+| 125 | DispHeadsetDevice | set-only |
+| 126 | DispHeadsetCaptureDevice | set-only |
+| 127 | DispHandsfreeDevice | set-only |
+| 128 | DispHandsfreeCaptureDevice | set-only |
+| 129 | DispOpenListeningDevice | set-only |
+| 130 | DispRingingDevice | set-only |
+| 131 | DispDefaultAudioMode | set |
+| 144 | DispPreferredHandsetDevice | get/set |
+| 145 | DispPreferredHeadsetDevice | get/set |
+| 146 | DispPreferredHandsfreeDevice | get/set |
+| 147 | DispPreferredOpenListeningDevice | get/set |
+| 148 | DispPreferredRingingDevice | get/set |
+
+### 6.4 IClientLineMgrEx8 — Native vtable methods
+
+GUID: `{F8E5549A-4C00-11D3-80BC-00105A653379}`
+
+Native vtable-Methoden:
+- `GetAvailableWaveDevicesEx`
+- `UseWaveDevices(ref voiceDevice, ref handsFreeDevice, ref ringingDevice, int bConfigure, int bPnPEnable)`
+- `GetUsedWaveDevices`
+- `IsAudioConfigured(out bConfigured, out bIsPnPDevice, out bPnPDevicePresent)`
+- `StartAudioPnP(int bForcePnPDevice)`
+- `SetAudioMode(int iAudioMode)`
+
+### 6.5 CLSIDs
+
+| ProgID / Rolle | CLSID |
+|---|---|
+| `GenericDevicePlugin.GenericDeviceCollection` | `{F20146AB-850B-48E4-A732-A92C2C075750}` |
+| `AudioVolumeControl.AudioVolumeControl.1` | `{CC74F3E9-514D-4CAF-8AAA-A604EBCD123A}` |
+| `CLMgr.ClientLineMgr.2` | `{F8E552F8-4C00-11D3-80BC-00105A653379}` |
+
+### 6.6 Root Cause des Bridge-Bugs
+
+Der Bridge-Bug lag in der Wahl der falschen Init-Methode. Die Bridge rief `DispInitEx` (memid=41) auf, welche `E_NOTIMPL` zurückgibt und das Plugin-Loading **nicht** auslöst.
+
+Stattdessen **muss** `DispInit` (memid=1) aufgerufen werden, da nur diese Methode die oben beschriebene Kette `CCLineMgr::Init → CLineMgr::RegisterPlugins → CAudioDeviceManager::ReadPlugins` triggert.
+
+### 6.7 Fix für den Standalone-Modus
+
+Korrekte Sequenz für den Standalone-Betrieb ohne SwyxIt!:
+
+1. `DispInit(serverName)` aufrufen — **BEVOR** `RegisterUserEx` / `RegisterUserConnector4UC` gerufen wird
+2. ~2 Sekunden warten, damit das asynchrone Plugin-Loading abschließen kann
+3. `DispHandsfreeDevices` lesen, um zu verifizieren, dass Geräte geladen wurden
+4. Erstes Gerät automatisch auswählen via `DispHandsfreeDevice = <deviceName>`
+
+---
+
+*Dokument erstellt: 2026-03-12, erweitert: 2026-07-13, 2026-07-14*
 *Autor: AI-Analyse für Entwicklungszwecke*
 *NICHT COMMITTEN — .gitignore-Eintrag empfohlen*

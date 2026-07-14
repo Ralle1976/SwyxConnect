@@ -50,39 +50,21 @@ public sealed class SwyxItSuppressor : IDisposable
     {
         DisableStartupShortcut();
 
-        // v1.4.0 strategy: SwyxIt! is NEEDED for audio device initialization.
-        // We hide its window (SW_HIDE) instead of killing it.
-        // This way CLMgr has audio devices, calls work, but the user never sees SwyxIt!.
+        // v1.5.0: If SwyxIt! is running, hide it. If not running, DON'T start it.
+        // Our bridge calls DispInit() itself which loads audio plugins without SwyxIt!.
+        // SwyxIt! is only needed as a fallback if DispInit fails.
         var swyxIt = Process.GetProcessesByName(ClassicProcessName).FirstOrDefault();
-        if (swyxIt == null)
+        if (swyxIt != null)
         {
-            // SwyxIt! not running — start it hidden, it will initialize CLMgr audio
-            Logging.Info("SwyxItSuppressor: SwyxIt! not running. Starting it hidden for audio init...");
-            try
-            {
-                var swyxItExe = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                    "Swyx", "SwyxIt!", "SwyxIt!.exe");
-                if (File.Exists(swyxItExe))
-                {
-                    Process.Start(swyxItExe, "/M");
-                    Logging.Info("SwyxItSuppressor: SwyxIt! started with /M (minimized).");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logging.Warn($"SwyxItSuppressor: Could not start SwyxIt!: {ex.Message}");
-            }
+            Logging.Info($"SwyxItSuppressor: SwyxIt! running (PID={swyxIt.Id}). Hiding window.");
+            SuppressClassicSwyxIt();
+            _timer.Start();
+            Logging.Info("SwyxItSuppressor: Active (HIDE mode).");
         }
         else
         {
-            Logging.Info($"SwyxItSuppressor: SwyxIt! already running (PID={swyxIt.Id}).");
+            Logging.Info("SwyxItSuppressor: SwyxIt! not running. Standalone mode — bridge calls DispInit directly.");
         }
-
-        // Start hiding timer — hide SwyxIt! window every 2s if it becomes visible
-        // (call events can make SwyxIt! un-minimize itself)
-        _timer.Start();
-        Logging.Info("SwyxItSuppressor: Active (HIDE mode — SwyxIt! kept alive but invisible).");
     }
 
     public void Stop()

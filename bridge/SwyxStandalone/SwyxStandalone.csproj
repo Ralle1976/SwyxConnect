@@ -12,7 +12,7 @@
     <!-- Assembly name MUST be SwyxMessenger for ComSocket auth (whitelist match) -->
     <AssemblyName>SwyxMessenger</AssemblyName>
     <Description>SwyxConnect COM+SignalR Bridge</Description>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <!-- UseAppHost=true produces SwyxMessenger.exe so the process name matches the ComSocket whitelist -->
     <UseAppHost>true</UseAppHost>
   </PropertyGroup>
