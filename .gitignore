@@ -79,3 +79,8 @@ AGENTS.md
 RELEASE_NOTES*
 SWYX_REVERSE*
 bridge/SwyxStandalone/ComSocketAuth.md
+
+# Test scripts with hardcoded defaults (may contain server-specific config)
+scripts/test-direct-login.mjs
+scripts/test-standalone-v15.cjs
+scripts/test-rc-login.mjs
