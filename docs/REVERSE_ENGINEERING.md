@@ -1,7 +1,6 @@
-# SwyxIt! Reverse Engineering Analyse
+# SwyxIt! COM API Analyse
 
-> ⚠️ **NICHT COMMITTEN** — Nur für lokale Entwicklungszwecke.
-> Ziel: Vollständiges Verständnis aller Binaries, DLLs, COM-Interfaces und des Tunnel-Mechanismus.
+Technische Analyse der CLMgr COM-Schnittstellen, Audio-Plugin-Architektur und RemoteConnector-Tunnel-Mechanismus.
 
 ---
 
@@ -1025,6 +1024,4 @@ Korrekte Sequenz für den Standalone-Betrieb ohne SwyxIt!:
 
 ---
 
-*Dokument erstellt: 2026-03-12, erweitert: 2026-07-13, 2026-07-14*
-*Autor: AI-Analyse für Entwicklungszwecke*
-*NICHT COMMITTEN — .gitignore-Eintrag empfohlen*
+*Erstellt: 2026-03-12, erweitert: 2026-07-13, 2026-07-14*
