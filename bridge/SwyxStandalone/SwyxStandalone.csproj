@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platform>x86</Platform>
+    <RootNamespace>SwyxStandalone</RootNamespace>
+    <!-- Assembly name MUST be SwyxMessenger for ComSocket auth (whitelist match) -->
+    <AssemblyName>SwyxMessenger</AssemblyName>
+    <Description>SwyxConnect COM+SignalR Bridge</Description>
+    <Version>1.6.0</Version>
+    <!-- UseAppHost=true produces SwyxMessenger.exe so the process name matches the ComSocket whitelist -->
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Swyx.Client.ClmgrAPI" Version="*" />
+    <PackageReference Include="System.Text.Json" Version="8.*" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.*" />
+  </ItemGroup>
+</Project>

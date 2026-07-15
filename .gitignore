@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# .NET build
+bridge/SwyxStandalone/bin/
+bridge/SwyxStandalone/obj/
+bridge/SwyxBridge/bin/
+bridge/SwyxBridge/obj/
+bridge/SwyxSpike/bin/
+bridge/SwyxSpike/obj/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Electron
+*.asar
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Screenshots
+*.jpg
+*.png
+!resources/*.png
+
+# Local analysis files
+*.local.md
+SWYX_REVERSE_ENGINEERING*
+
+# Worktrees
+.worktrees/
+
+.zcode/
+graphify-out/
+nul

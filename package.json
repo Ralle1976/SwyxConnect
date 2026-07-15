@@ -1,0 +1,16 @@
+{
+  "name": "swyxconnect",
+  "version": "1.6.0",
+  "description": "Modern Swyx Softphone - Electron + React + COM Bridge",
+  "main": "./out/main/index.js",
+  "author": "Ralle1976",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@azure/msal-node": "^2.16.0",
+    "zustand": "^5.0.3",
+    "immer": "^10.1.1",
+    "lucide-react": "^0.469.0"
+  }
+}

@@ -1,0 +1,117 @@
+// ─── Bridge timing constants ────────────────────────────────────────────────
+export const BRIDGE_HEARTBEAT_INTERVAL = 5000 as const;
+export const BRIDGE_HEARTBEAT_TIMEOUT = 10000 as const;
+export const BRIDGE_MAX_RESTARTS = 3 as const;
+export const BRIDGE_RESTART_WINDOW = 60000 as const;
+export const BRIDGE_REQUEST_TIMEOUT = 10000 as const;
+
+// ─── IPC channel names ───────────────────────────────────────────────────────
+export const IPC_CHANNELS = {
+  // Invoke channels (renderer → main)
+  // Auth Session channels
+  LOGIN: 'swyx:login',
+  LOGOUT: 'swyx:logout',
+  GET_SESSION_STATUS: 'swyx:getSessionStatus',
+  // Call Control channels
+  DIAL: 'swyx:dial',
+  ANSWER: 'swyx:answer',
+  HANGUP: 'swyx:hangup',
+  HOLD: 'swyx:hold',
+  TRANSFER: 'swyx:transfer',
+  GET_LINES: 'swyx:getLines',
+  GET_CONTACTS: 'swyx:getContacts',
+  GET_HISTORY: 'swyx:getHistory',
+  GET_VOICEMAILS: 'swyx:getVoicemails',
+  GET_PRESENCE: 'swyx:getPresence',
+  SET_PRESENCE: 'swyx:setPresence',
+  GET_COLLEAGUE_PRESENCE: 'swyx:getColleaguePresence',
+  GET_BRIDGE_STATE: 'swyx:getBridgeState',
+  GET_SETTINGS: 'swyx:getSettings',
+  SET_SETTINGS: 'swyx:setSettings',
+  SEND_DTMF: 'swyx:sendDtmf',
+  MUTE: 'swyx:mute',
+  UNMUTE: 'swyx:unmute',
+  SET_NUMBER_OF_LINES: 'swyx:setNumberOfLines',
+  GET_CONNECTION_INFO: 'swyx:getConnectionInfo',
+  // Forwarding & Advanced Call channels
+  FORWARD_CALL: 'swyx:forwardCall',
+  RESOLVE_NUMBER: 'swyx:resolveNumber',
+  CONVERT_NUMBER: 'swyx:convertNumber',
+  REQUEST_CALLBACK_ON_BUSY: 'swyx:requestCallbackOnBusy',
+  PICKUP_GROUP_CALL: 'swyx:pickupGroupCall',
+  GET_GROUP_NOTIFICATIONS: 'swyx:getGroupNotifications',
+  OPEN_CALL_ROUTING: 'swyx:openCallRouting',
+  // Conference channels
+  CREATE_CONFERENCE: 'swyx:createConference',
+  JOIN_LINE_TO_CONFERENCE: 'swyx:joinLineToConference',
+  JOIN_ALL_TO_CONFERENCE: 'swyx:joinAllToConference',
+  GET_CONFERENCE_STATUS: 'swyx:getConferenceStatus',
+  // Recording channels
+  START_RECORDING: 'swyx:startRecording',
+  STOP_RECORDING: 'swyx:stopRecording',
+  PLAY_SOUND: 'swyx:playSound',
+  STOP_SOUND: 'swyx:stopSound',
+  // System info channels
+  GET_SYSTEM_INFO: 'swyx:getSystemInfo',
+  GET_AUDIO_DEVICES: 'swyx:getAudioDevices',
+  SET_AUDIO_MODE: 'swyx:setAudioMode',
+  SET_MICRO: 'swyx:setMicro',
+  SET_SPEAKER: 'swyx:setSpeaker',
+  // Event channels (main → renderer)
+  LINE_STATE_CHANGED: 'swyx:lineStateChanged',
+  BRIDGE_STATE_CHANGED: 'swyx:bridgeStateChanged',
+  INCOMING_CALL: 'swyx:incomingCall',
+  PRESENCE_CHANGED: 'swyx:presenceChanged',
+  CALL_ENDED: 'swyx:callEnded',
+  HEARTBEAT: 'swyx:heartbeat',
+  SESSION_ATTACHED: 'swyx:sessionAttached',
+  // TeamsLocal channels
+  TEAMS_LOCAL_CONNECT: 'swyx:teamsLocal:connect',
+  TEAMS_LOCAL_DISCONNECT: 'swyx:teamsLocal:disconnect',
+  TEAMS_LOCAL_GET_STATUS: 'swyx:teamsLocal:getStatus',
+  TEAMS_LOCAL_GET_AVAILABILITY: 'swyx:teamsLocal:getAvailability',
+  TEAMS_LOCAL_SET_AVAILABILITY: 'swyx:teamsLocal:setAvailability',
+  TEAMS_LOCAL_MAKE_CALL: 'swyx:teamsLocal:makeCall',
+  TEAMS_LOCAL_GET_ACCOUNTS: 'swyx:teamsLocal:getAccounts',
+  TEAMS_LOCAL_GET_TEAMS_PRESENCE: 'swyx:teamsLocal:getTeamsPresence',
+  TEAMS_LOCAL_START_WATCH: 'swyx:teamsLocal:startWatch',
+  TEAMS_LOCAL_STOP_WATCH: 'swyx:teamsLocal:stopWatch',
+  // TeamsLocal events (main → renderer)
+  TEAMS_LOCAL_PRESENCE_CHANGED: 'swyx:teamsLocal:presenceChanged',
+  TEAMS_LOCAL_INCOMING_CALL: 'swyx:teamsLocal:incomingCall',
+  TEAMS_LOCAL_STATE_CHANGED: 'swyx:teamsLocal:stateChanged',
+  TEAMS_LOCAL_ERROR: 'swyx:teamsLocal:error',
+  // TeamsGraph channels (Graph API)
+  TEAMS_GRAPH_LOGIN: 'swyx:teamsGraph:login',
+  TEAMS_GRAPH_LOGOUT: 'swyx:teamsGraph:logout',
+  TEAMS_GRAPH_GET_STATUS: 'swyx:teamsGraph:getStatus',
+  TEAMS_GRAPH_START_POLLING: 'swyx:teamsGraph:startPolling',
+  TEAMS_GRAPH_STOP_POLLING: 'swyx:teamsGraph:stopPolling',
+  // TeamsGraph events (main → renderer)
+  TEAMS_GRAPH_PRESENCE_CHANGED: 'swyx:teamsGraph:presenceChanged',
+  TEAMS_GRAPH_STATE_CHANGED: 'swyx:teamsGraph:stateChanged',
+  TEAMS_GRAPH_AUTH_REQUIRED: 'swyx:teamsGraph:authRequired',
+  TEAMS_GRAPH_ERROR: 'swyx:teamsGraph:error',
+  // ComSocket (SignalR) channels — rich data from SwyxItHub
+  CS_GET_PHONEBOOK: 'swyx:cs:getPhoneBook',
+  CS_SEARCH_CONTACTS: 'swyx:cs:searchContacts',
+  CS_GET_CALL_JOURNAL: 'swyx:cs:getCallJournal',
+  CS_GET_SPEED_DIALS: 'swyx:cs:getSpeedDials',
+  CS_GET_VOICE_MESSAGES: 'swyx:cs:getVoiceMessages',
+  CS_GET_FORWARDING: 'swyx:cs:getForwarding',
+  CS_GET_AUDIO_MODES: 'swyx:cs:getAudioModes',
+  CS_GET_AUDIO_VOLUMES: 'swyx:cs:getAudioVolumes',
+  CS_GET_USER_GROUPS: 'swyx:cs:getUserGroups',
+  CS_GET_VERSION_INFO: 'swyx:cs:getVersionInfo',
+  CS_GET_STATUS: 'swyx:cs:getStatus',
+  CS_RECONNECT: 'swyx:cs:reconnect',
+  // ComSocket events (main → renderer)
+  CS_LINE_STATE_CHANGED: 'swyx:cs:lineStateChanged',
+  CS_LINE_DETAILS_CHANGED: 'swyx:cs:lineDetailsChanged',
+  CS_USER_DATA_CHANGED: 'swyx:cs:userDataChanged',
+  CS_NOTIFICATION_CALLS_CHANGED: 'swyx:cs:notificationCallsChanged',
+  CS_COMSOCKET_STATE: 'swyx:cs:comsocketState',
+} as const;
+
+export type IpcChannelKey = keyof typeof IPC_CHANNELS;
+export type IpcChannelValue = (typeof IPC_CHANNELS)[IpcChannelKey];
