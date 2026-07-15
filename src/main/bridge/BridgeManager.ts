@@ -91,11 +91,21 @@ export class BridgeManager extends EventEmitter {
 
   private spawnProcess(): void {
     try {
-      // v1.4.0: Auto-Attach mode by default (no CLI credentials).
-      // SwyxItSuppressor starts SwyxIt! hidden, which initializes CLMgr (audio + tunnel).
-      // Our bridge then attaches to SwyxIt!'s session via DispIsLoggedIn.
-      // RC-Tunnel CLI login is disabled because it conflicts with SwyxIt!'s session.
-      const child = spawn(this.bridgeExe, [], {
+      // v1.6.0: Load credentials from .env for standalone RC tunnel login.
+      // If .env found → standalone mode (no SwyxIt! needed).
+      // If .env missing → Auto-Attach mode (attaches to SwyxIt! session).
+      const creds = getBridgeCredentials();
+      const args: string[] = [];
+      if (creds && creds.username && creds.password) {
+        args.push('--server', creds.server);
+        args.push('--public-server', creds.publicServer);
+        args.push('--user', creds.username);
+        args.push('--password', creds.password);
+        args.push('--auth-mode', String(creds.authMode));
+        if (creds.backupServer) args.push('--backup-server', creds.backupServer);
+      }
+
+      const child = spawn(this.bridgeExe, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
