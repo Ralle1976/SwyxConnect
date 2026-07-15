@@ -2,65 +2,9 @@ using System.Runtime.InteropServices;
 
 namespace SwyxStandalone.Com;
 
-// COM Interop interfaces for CLMgr — extracted from Interop.CLMgr.dll (decompiled 2026-07-15).
-// These are the native vtable interfaces that disp-interface (dynamic) cannot reach.
-// IClientLineMgr2.Init() is the critical method that triggers audio plugin loading.
+// COM Interop interfaces verified against decompiled Interop.CLMgr.dll (2026-07-15).
 
-// GUID: F8E552F6-4C00-11D3-80BC-00105A653379
-// The real vtable API — Init/RegisterUser are here, not on the disp-interface.
-[ComImport]
-[Guid("F8E552F6-4C00-11D3-80BC-00105A653379")]
-[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-public interface IClientLineMgr2
-{
-    // vtable slot 0: QueryInterface (inherited from IUnknown)
-    // vtable slot 1: AddRef
-    // vtable slot 2: Release
-    // vtable slot 3:
-    void Init(
-        [In, MarshalAs(UnmanagedType.BStr)] string ServerName,
-        out IClPBX ppIClPbx);
-
-    // vtable slot 4:
-    void ReInit(
-        out IClPBX ppIClPbx,
-        out IClUser ppIClUser);
-
-    // vtable slot 5:
-    void RegisterUser(
-        [In, MarshalAs(UnmanagedType.BStr)] string PbxUserName,
-        out IClUser ppIClUser,
-        out uint pulUserId,
-        ref uint pMaxUsers,
-        [Out, MarshalAs(UnmanagedType.BStr)] out string pszPBXUser,
-        out uint pNumReturned);
-
-    // vtable slot 6:
-    void RegisterSecondaryUser(
-        [In, MarshalAs(UnmanagedType.BStr)] string PbxUserName,
-        [In, MarshalAs(UnmanagedType.BStr)] string NtUserName,
-        [In, MarshalAs(UnmanagedType.BStr)] string NtPassword,
-        out IClUser ppIClUser,
-        out uint pulUserId);
-
-    // vtable slot 7:
-    void ReleaseUser([In] uint ulUserId);
-
-    // vtable slot 8:
-    void GetLineManagerType(out SClLineManagerType pLineManagerType);
-
-    // vtable slot 9:
-    void RegisterMessageTarget([In] uint hWnd, [In] uint dwThreadId);
-
-    // vtable slot 10:
-    void UnRegisterMessageTarget();
-
-    // vtable slot 11:
-    void SendClientShutDownRequest();
-}
-
-// Dummy interfaces for out-params — we don't need to call methods on them,
-// we just need the types to exist so the vtable layout is correct.
+// Dummy interfaces for out-params
 [ComImport]
 [Guid("00000000-0000-0000-0000-000000000000")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -71,60 +15,93 @@ public interface IClPBX { }
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IClUser { }
 
-// Line manager type enum
-public enum SClLineManagerType
-{
-    SClPbxLineManager = 0,
-    SClTapiLineManager = 1
-}
-
-// GUID: F8E5536B-4C00-11D3-80BC-00105A653379 — the disp-interface we already use via dynamic
-// But we also need DispId(100) DispClientConfig which returns IClientConfig
-// GUID: F8E554CD-4C00-11D3-80BC-00105A653379 — IClientConfig (has LoginDeviceType, audio device names)
+// GUID: F8E552F6-4C00-11D3-80BC-00105A653379
 [ComImport]
-[Guid("F8E554CD-4C00-11D3-80BC-00105A653379")]
-[InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
-public interface IClientConfig
+[Guid("F8E552F6-4C00-11D3-80BC-00105A653379")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IClientLineMgr2
 {
-    [DispId(24)] sbyte LoginDeviceType { get; set; }
-    [DispId(40)] sbyte DefaultLoginDeviceType { get; }
-
-    // Audio device names (DispIds 92-99 from RE)
-    [DispId(92)] string HandsetDevice { get; set; }
-    [DispId(93)] string HandsetCaptureDevice { get; set; }
-    [DispId(94)] string HeadsetDevice { get; set; }
-    [DispId(95)] string HeadsetCaptureDevice { get; set; }
-    [DispId(96)] string HandsfreeDevice { get; set; }
-    [DispId(97)] string HandsfreeCaptureDevice { get; set; }
-    [DispId(98)] string OpenListeningDevice { get; set; }
-    [DispId(99)] string RingingDevice { get; set; }
-
-    [DispId(101)] int DefaultAudioMode { get; }
+    void Init([In, MarshalAs(UnmanagedType.BStr)] string ServerName, out IClPBX ppIClPbx);
+    void ReInit(out IClPBX ppIClPbx, out IClUser ppIClUser);
+    void RegisterUser([In, MarshalAs(UnmanagedType.BStr)] string PbxUserName, out IClUser ppIClUser, out uint pulUserId, ref uint pMaxUsers, [Out, MarshalAs(UnmanagedType.BStr)] out string pszPBXUser, out uint pNumReturned);
+    void RegisterSecondaryUser([In, MarshalAs(UnmanagedType.BStr)] string PbxUserName, [In, MarshalAs(UnmanagedType.BStr)] string NtUserName, [In, MarshalAs(UnmanagedType.BStr)] string NtPassword, out IClUser ppIClUser, out uint pulUserId);
+    void ReleaseUser([In] uint ulUserId);
+    void GetLineManagerType(out int pLineManagerType);
+    void RegisterMessageTarget([In] uint hWnd, [In] uint dwThreadId);
+    void UnRegisterMessageTarget();
+    void SendClientShutDownRequest();
 }
 
-// GUID: F8E554AC-4C00-11D3-80BC-00105A653379 — IClientLineMgrEx8 (audio vtable API)
+/// <summary>
+/// Sound device description for IClientLineMgrEx8.UseWaveDevices().
+/// Must match the native struct layout exactly.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct CLMgrSoundDeviceDescriptionEx
+{
+    [MarshalAs(UnmanagedType.BStr)] public string m_bstrVisibleDeviceName;
+    public int m_bIsDirectXSoundDevice;
+    public int m_bHasPlayer;
+    public int m_bHasRecorder;
+    public int m_bHasMixer;
+    public int m_bHasDxAudioRenderer;
+    [MarshalAs(UnmanagedType.BStr)] public string m_bstrDeviceIdPlayer;
+    [MarshalAs(UnmanagedType.BStr)] public string m_bstrDeviceIdRecorder;
+    [MarshalAs(UnmanagedType.BStr)] public string m_bstrMixerName;
+    [MarshalAs(UnmanagedType.BStr)] public string m_bstrDxAudioRenderer;
+    [MarshalAs(UnmanagedType.BStr)] public string m_bstrManufacturerId;
+    [MarshalAs(UnmanagedType.BStr)] public string m_bstrsProductId;
+    public uint m_dwManufacturerId;
+    public uint m_dwProductId;
+    public int m_bIsHandset;
+    public int m_bIsHeadset;
+    public int m_bIsSpeaker;
+    public int m_bHookSupportUSB;
+    public int m_bHookSupportComPort;
+    public int m_iComPort;
+    public int m_bHookSupportGamePort;
+}
+
+/// <summary>
+/// GUID: F8E554AC-4C00-11D3-80BC-00105A653379
+/// The audio vtable API. Method order verified from Interop.CLMgr.dll.
+/// </summary>
 [ComImport]
 [Guid("F8E554AC-4C00-11D3-80BC-00105A653379")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IClientLineMgrEx8
 {
-    // Slots 0-2: IUnknown
-    // The exact vtable order matters. We need to get to UseWaveDevices.
-    // Since we can't know all intermediate slots, we use PreserveSig and
-    // careful ordering. For now, just declare the methods we need.
-    // If vtable offset is wrong, we'll get a COMException and adjust.
-
-    void SetVolume(int volume);
-    void GetVolume(out int volume);
+    void SetVolume([In] int iVolume);
+    void GetVolume(out int piVolume);
     void IncrementVolume();
     void DecrementVolume();
-    void SetMicLevel(int level);
-    void GetMicLevel(out int level);
+    void SetMicLevel([In] int iVolume);
+    void GetMicLevel(out int piVolume);
     void GetAudioMode(out int piAudioMode);
-    void SetAudioMode(int iAudioMode);
-    void GetAvailableWaveDevicesEx(ref uint pMaxDevices, out IntPtr pSoundDevices, out uint pNumReturned);
-    void UseWaveDevices(ref IntPtr pVoiceDevice, ref IntPtr pHandsFreeDevice, ref IntPtr pRingingDevice, int bConfigure, int bPnPEnable);
-    void GetUsedWaveDevices(out IntPtr pVoiceDevice, out IntPtr pHandsFreeDevice, out IntPtr pRingingDevice);
-    void IsAudioConfigured(out int pbConfigured, out int pbIsPnPDevice, out int pbPnPDevicePresent);
-    void StartAudioPnP(int bForcePnPDevice);
+
+    void GetAvailableWaveDevicesEx(
+        [In][Out] ref uint pMaxDevices,
+        out CLMgrSoundDeviceDescriptionEx pSoundDevices,
+        out uint pNumReturned);
+
+    void UseWaveDevices(
+        [In] ref CLMgrSoundDeviceDescriptionEx pVoiceDevice,
+        [In] ref CLMgrSoundDeviceDescriptionEx pHandsFreeDevice,
+        [In] ref CLMgrSoundDeviceDescriptionEx pRingingDevice,
+        [In] int bConfigure,
+        [In] int bPnPEnable);
+
+    void GetUsedWaveDevices(
+        out CLMgrSoundDeviceDescriptionEx pVoiceDevice,
+        out CLMgrSoundDeviceDescriptionEx pHandsFreeDevice,
+        out CLMgrSoundDeviceDescriptionEx pRingingDevice);
+
+    void IsAudioConfigured(
+        out int pbConfigured,
+        out int pbIsPnPDevice,
+        out int pbPnPDevicePresent);
+
+    void StartAudioPnP([In] int bForcePnPDevice);
+
+    void SetAudioMode([In] int iAudioMode);
 }

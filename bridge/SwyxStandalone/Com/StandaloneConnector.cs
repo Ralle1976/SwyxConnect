@@ -43,54 +43,78 @@ public sealed class StandaloneConnector : IDisposable
 
     /// <summary>
     /// Reads audio device names from ClientConfig and applies them to CLMgr's active devices.
-    /// Must be called AFTER a successful login — CLMgr only binds devices to lines post-login.
-    /// RE 2026-07-15: ClientConfig (DispClientConfig, DispId 100) stores device config,
-    /// DispHandsfreeDevice (DispId 127) activates them.
+    /// Uses Type.InvokeMember (late binding) instead of vtable — avoids crash from
+    /// incorrect vtable offset in multi-interface COM objects.
     /// </summary>
     public void ApplyAudioDevices()
     {
         if (_clmgr == null) return;
 
+        // Check if audio is configured (via dynamic method call — late binding)
         try
         {
-            var cfg = _clmgr.DispClientConfig;
-            if (cfg == null) return;
+            var type = _clmgr.GetType();
 
-            string hfPlayback = "", hfCapture = "", hsPlayback = "", hsCapture = "";
-            try { hfPlayback = (string)(cfg.HandsfreeDevice ?? ""); } catch { }
-            try { hfCapture = (string)(cfg.HandsfreeCaptureDevice ?? ""); } catch { }
-            try { hsPlayback = (string)(cfg.HeadsetDevice ?? ""); } catch { }
-            try { hsCapture = (string)(cfg.HeadsetCaptureDevice ?? ""); } catch { }
+            // Try calling IsAudioConfigured via InvokeMember (late binding to vtable method by name)
+            object[] args = new object[] { 0, 0, 0 };
+            type.InvokeMember("IsAudioConfigured",
+                System.Reflection.BindingFlags.InvokeMethod, null, _clmgr, args);
+            int configured = (int)args[0];
+            Logging.Info($"ApplyAudioDevices: IsAudioConfigured={configured}");
 
-            Logging.Info($"ApplyAudioDevices: Config HF={hfPlayback}/{hfCapture}, HS={hsPlayback}/{hsCapture}");
-
-            if (!string.IsNullOrEmpty(hfPlayback))
+            if (configured == 0)
             {
-                try { _clmgr.DispHandsfreeDevice = hfPlayback; Logging.Info($"ApplyAudioDevices: DispHandsfreeDevice='{hfPlayback}'"); }
-                catch (Exception ex) { Logging.Warn($"ApplyAudioDevices: Set HF playback failed: {ex.Message}"); }
-            }
-            if (!string.IsNullOrEmpty(hfCapture))
-            {
-                try { _clmgr.DispHandsfreeCaptureDevice = hfCapture; Logging.Info($"ApplyAudioDevices: DispHandsfreeCaptureDevice='{hfCapture}'"); }
-                catch (Exception ex) { Logging.Warn($"ApplyAudioDevices: Set HF capture failed: {ex.Message}"); }
-            }
+                // Get available wave devices
+                Logging.Info("ApplyAudioDevices: Audio not configured. Querying available devices...");
 
-            // Set audio mode to handsfree
-            try { _clmgr.DispDefaultAudioMode = 2; Logging.Info("ApplyAudioDevices: Set DispDefaultAudioMode=2 (Handsfree)"); }
-            catch { }
+                // Use disp-interface: DispHandsfreeDevices (DispId 111) returns a collection
+                try
+                {
+                    var hfDevices = type.InvokeMember("DispHandsfreeDevices",
+                        System.Reflection.BindingFlags.GetProperty, null, _clmgr, null);
+                    Logging.Info($"ApplyAudioDevices: DispHandsfreeDevices = {hfDevices}");
+                }
+                catch (Exception ex) { Logging.Warn($"DispHandsfreeDevices: {ex.Message}"); }
 
-            // Verify
-            try
-            {
-                string verifyHf = (string)(_clmgr.DispHandsfreeDevice ?? "");
-                Logging.Info($"ApplyAudioDevices: Verify DispHandsfreeDevice='{verifyHf}'");
+                // Try DispHandsetDevices (DispId 107)
+                try
+                {
+                    var hsDevices = type.InvokeMember("DispHandsetDevices",
+                        System.Reflection.BindingFlags.GetProperty, null, _clmgr, null);
+                    Logging.Info($"ApplyAudioDevices: DispHandsetDevices = {hsDevices}");
+                }
+                catch (Exception ex) { Logging.Warn($"DispHandsetDevices: {ex.Message}"); }
             }
-            catch { }
         }
         catch (Exception ex)
         {
-            Logging.Warn($"ApplyAudioDevices: Failed: {ex.Message}");
+            Logging.Warn($"ApplyAudioDevices: IsAudioConfigured failed: {ex.Message}");
         }
+
+        // Set audio devices via disp-interface
+        try
+        {
+            var cfg = _clmgr.DispClientConfig;
+            if (cfg != null)
+            {
+                string hfPlayback = "", hfCapture = "";
+                try { hfPlayback = (string)(cfg.HandsfreeDevice ?? ""); } catch { }
+                try { hfCapture = (string)(cfg.HandsfreeCaptureDevice ?? ""); } catch { }
+
+                if (!string.IsNullOrEmpty(hfPlayback))
+                {
+                    try { _clmgr.DispHandsfreeDevice = hfPlayback; Logging.Info($"ApplyAudioDevices: DispHandsfreeDevice='{hfPlayback}'"); }
+                    catch { }
+                }
+                if (!string.IsNullOrEmpty(hfCapture))
+                {
+                    try { _clmgr.DispHandsfreeCaptureDevice = hfCapture; Logging.Info($"ApplyAudioDevices: DispHandsfreeCaptureDevice='{hfCapture}'"); }
+                    catch { }
+                }
+                try { _clmgr.DispDefaultAudioMode = 2; } catch { }
+            }
+        }
+        catch { }
     }
 
     public StandaloneConnector()
