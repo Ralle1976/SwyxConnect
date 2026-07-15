@@ -165,10 +165,11 @@ public sealed class LineManager
         int selectedId = -1;
         try { selectedId = GetSelectedLineId(); } catch { }
 
-        // Headless CLMgr may report 0 lines — try to initialize
-        if (count == 0)
+        // Headless CLMgr may report 0 or 1 lines — ensure at least 2 for functional calls.
+        // RE finding: Dial stays Inactive with only 1 line; needs 2+ to go Active.
+        if (count < 2)
         {
-            Logging.Info("LineManager: DispNumberOfLines=0, attempting DispSetNumberOfLines(2)");
+            Logging.Info($"LineManager: DispNumberOfLines={count}, setting to 2");
             try
             {
                 GetCom().DispSetNumberOfLines(2);
@@ -176,7 +177,7 @@ public sealed class LineManager
             }
             catch (Exception ex)
             {
-                Logging.Warn($"LineManager: Headless init failed: {ex.Message}");
+                Logging.Warn($"LineManager: SetNumberOfLines failed: {ex.Message}");
             }
         }
 
