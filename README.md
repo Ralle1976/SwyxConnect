@@ -3,7 +3,7 @@
 > **Modern Electron-based softphone client for Swyx/Enreach telephony.**
 > Replaces SwyxIt! as the primary phone interface with a clean, modern UI.
 
-[![Version: 1.4.0](https://img.shields.io/badge/Version-1.4.0-brightgreen.svg)]()
+[![Version: 1.6.0](https://img.shields.io/badge/Version-1.6.0-brightgreen.svg)]()
 [![Platform: Windows x86](https://img.shields.io/badge/Platform-Windows%20x86-lightgrey.svg)]()
 [![Swyx: v14.x](https://img.shields.io/badge/Swyx-v14.x-orange.svg)]()
 [![.NET: 8.0](https://img.shields.io/badge/.NET-8.0-purple.svg)]()
@@ -55,8 +55,8 @@ Electron App (Node.js + React 19 + TypeScript + Tailwind v4)
 
 | Mode | When | How | SwyxIt! needed? |
 |---|---|---|---|
-| **HIDE (v1.4.0 — default)** | Always | SwyxIt! starts hidden, bridge attaches to its session | ✅ Yes, but invisible (SW_HIDE) |
-| **RC-Tunnel (v1.3.0)** | `.env` file present with credentials | `RegisterUserConnector4UC` builds TLS tunnel | ❌ No — but audio devices may not initialize |
+| **Standalone (v1.6.0 — default)** | `.env` present | `RegisterUserConnector4UC` + `ApplyAudioDevices` via late binding | ❌ **No!** Full standalone |
+| **HIDE (v1.4.0 fallback)** | No `.env` | SwyxIt! hidden (SW_HIDE), bridge Auto-Attaches | ✅ Yes, but invisible |
 
 ### Why Hybrid COM + ComSocket?
 
