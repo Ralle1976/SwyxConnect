@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SwyxStandalone.JsonRpc;
 using SwyxStandalone.Utils;
 
@@ -11,6 +12,11 @@ public sealed class EventSink
 
     private readonly StandaloneConnector _connector;
     private readonly LineManager _lineManager;
+
+    // Connection Point cookie for DispOnLineMgrNotification (the other event interface)
+    private static int _dispEventCookie;
+    private static object? _dispEventSink;
+    private static bool _dispEventSubscribed;
 
     private EventSink(StandaloneConnector connector, LineManager lineManager)
     {
@@ -30,6 +36,7 @@ public sealed class EventSink
         if (com == null)
             throw new InvalidOperationException("COM nicht verbunden.");
 
+        // Subscribe to PubOnLineMgrNotification (what we already do)
         try
         {
             ((dynamic)com).PubOnLineMgrNotification += _staticDelegate;
@@ -37,9 +44,21 @@ public sealed class EventSink
         }
         catch (Exception ex)
         {
-            _staticInstance = null;
-            _staticDelegate = null;
-            throw new InvalidOperationException($"Event-Registrierung fehlgeschlagen: {ex.Message}", ex);
+            Logging.Warn($"EventSink: PubOnLineMgrNotification failed: {ex.Message}");
+        }
+
+        // ALSO subscribe to DispOnLineMgrNotification via disp-event (dynamic +=)
+        // SwyxIt! subscribes to BOTH event interfaces. DispOnLineMgrNotification
+        // might be the trigger that tells CLMgr "a full client is present" → load audio.
+        try
+        {
+            ((dynamic)com).DispOnLineMgrNotification += _staticDelegate;
+            _dispEventSubscribed = true;
+            Logging.Info("EventSink: Registriert für DispOnLineMgrNotification (disp-event).");
+        }
+        catch (Exception ex)
+        {
+            Logging.Warn($"EventSink: DispOnLineMgrNotification failed: {ex.Message}");
         }
 
         return sink;
@@ -53,7 +72,14 @@ public sealed class EventSink
         {
             var com = _staticInstance._connector.GetCom();
             if (com != null)
-                ((dynamic)com).PubOnLineMgrNotification -= _staticDelegate;
+            {
+                try { ((dynamic)com).PubOnLineMgrNotification -= _staticDelegate; } catch { }
+                if (_dispEventSubscribed)
+                {
+                    try { ((dynamic)com).DispOnLineMgrNotification -= _staticDelegate; } catch { }
+                    _dispEventSubscribed = false;
+                }
+            }
             Logging.Info("EventSink: Abgemeldet.");
         }
         catch (Exception ex)

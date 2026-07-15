@@ -123,15 +123,26 @@ public sealed class StandaloneConnector : IDisposable
             _clmgr = Activator.CreateInstance(comType);
             Logging.Info("StandaloneConnector: COM-Objekt erfolgreich erstellt.");
 
-            // Call DispInit (triggers CCLineMgr::Init → ReadPlugins → audio device loading)
+            // Call IClientLineMgr2.Init via typed COM Interop — this is the REAL init
+            // that triggers ReadPlugins → audio device loading.
+            // DispInit (disp-interface) returns E_NOTIMPL, but Init (vtable) does the real work.
             try
             {
-                int hr = (int)_clmgr.DispInit("");
-                Logging.Info($"StandaloneConnector: DispInit returned 0x{hr:X8}");
+                var clm2 = (IClientLineMgr2)_clmgr;
+                IClPBX pbx;
+                clm2.Init("", out pbx);
+                Logging.Info("StandaloneConnector: IClientLineMgr2.Init() succeeded!");
             }
             catch (Exception initEx)
             {
-                Logging.Warn($"StandaloneConnector: DispInit non-fatal: {initEx.Message}");
+                Logging.Warn($"StandaloneConnector: IClientLineMgr2.Init failed: {initEx.Message}");
+                // Fallback: try DispInit (may work if CLMgr already initialized)
+                try
+                {
+                    int hr = (int)_clmgr.DispInit("");
+                    Logging.Info($"StandaloneConnector: DispInit returned 0x{hr:X8} (fallback)");
+                }
+                catch { }
             }
 
             // Set LoginDeviceType via IClientConfig (DispClientConfig, DispId 100)
