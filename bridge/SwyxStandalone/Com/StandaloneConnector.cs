@@ -429,10 +429,10 @@ public sealed class StandaloneConnector : IDisposable
             _clmgr.RegisterUserConnector4UC(
                 connectorConfig,              // int: 1 = use RemoteConnector
                 certificateConfig,            // int: 0 = no cert (password auth)
-                publicServer,                 // string: public auth server (e.g. RC0321.axxess.de:15021)
+                publicServer,                 // string: public auth server (e.g. yourserver.example.com:15021)
                 publicBackupServer ?? "",     // string: public backup
                 ref thumbprint,               // ref object: cert thumbprint (null for password)
-                internalServer,               // string: internal server name (e.g. 172.18.3.202)
+                internalServer,               // string: internal server name (e.g. 192.168.x.x)
                 internalBackupServer ?? "",   // string: internal backup
                 username,                     // string: PBX user
                 password,                     // string: password

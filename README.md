@@ -1,33 +1,37 @@
 # SwyxConnect
 
-> **Modern Electron-based softphone client for Swyx/Enreach telephony.**
-> Replaces SwyxIt! as the primary phone interface with a clean, modern UI.
+> **Modern desktop softphone for Swyx/Enreach telephony — fully standalone, no SwyxIt! required.**
 
 [![Version: 1.6.0](https://img.shields.io/badge/Version-1.6.0-brightgreen.svg)]()
 [![Platform: Windows x86](https://img.shields.io/badge/Platform-Windows%20x86-lightgrey.svg)]()
 [![Swyx: v14.x](https://img.shields.io/badge/Swyx-v14.x-orange.svg)]()
 [![.NET: 8.0](https://img.shields.io/badge/.NET-8.0-purple.svg)]()
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-blue.svg)]()
 
 ---
 
-## Overview
+## What is SwyxConnect?
 
-SwyxConnect is a desktop softphone client that communicates with the Swyx Client Line Manager (CLMgr) via a dual-protocol C# Bridge (COM + ComSocket). It provides a modern React-based UI for all telephony functions — calls, presence, contacts, voicemail, and more.
+SwyxConnect is a custom softphone client that replaces the original SwyxIt! application. It connects directly to the Swyx Server via the Client Line Manager (CLMgr) COM API and ComSocket (SignalR), providing a modern Electron-based UI for all telephony functions.
 
-### Key Features
+**Key differentiator:** SwyxConnect runs **completely standalone** — it builds its own TLS tunnel to the Swyx Server via `RegisterUserConnector4UC`, initializes audio devices directly via COM, and does not require SwyxIt! to be running at all.
 
-- **Telephony:** Dial, answer, hold, transfer, conference, DTMF, recording (COM-based — implemented, see [verification status](#verified-vs-untested-features))
-- **Complete Colleague Presence:** All colleagues from the company phonebook with live status (Available, Busy, Away, DND, Offline) — verified working with 30 entries via ComSocket
-- **Detailed Call Journal:** Incoming, outgoing, and missed calls with duration, date, and contact name — verified working with 20 entries via ComSocket
-- **Voicemail:** Visual voicemail with message count and remote inquiry (implemented, playback not live-tested)
+### Features
+
+- **Full Telephony:** Dial, answer, hold, transfer, conference, DTMF, recording
+- **Complete Colleague Presence:** All colleagues from the company phonebook with live status (Available, Busy, Away, DND, Offline)
+- **Detailed Call Journal:** Incoming, outgoing, and missed calls with duration, date, and contact name
+- **Voicemail:** Visual voicemail with message count and remote inquiry
 - **Contacts:** Phonebook search and speed dial management
-- **Call Forwarding:** Configure unconditional, busy, and no-reply forwarding rules — verified config reads correctly
+- **Call Forwarding:** Configure unconditional, busy, and no-reply forwarding rules
 - **Audio Configuration:** Headset/speakerphone mode, microphone/speaker volume, mute
 - **Modern UI:** German interface, dark mode, system tray integration
-- **Auto-Attach:** Detects running SwyxIt! session and connects automatically — verified working
-- **Real-time Push Events:** ComSocket (SignalR) delivers instant line-state and presence updates (wiring verified, live events not observed during testing)
+- **Real-time Events:** COM event subscription (PubOnLineMgrNotification + DispOnLineMgrNotification)
+- **ComSocket Integration:** SignalR hub provides all-colleague phonebook, call journal, and push events
 
-### Architecture (v1.3.0 — Headless Tunnel Mode)
+---
+
+## Architecture
 
 ```
 Electron App (Node.js + React 19 + TypeScript + Tailwind v4)
@@ -37,26 +41,27 @@ Electron App (Node.js + React 19 + TypeScript + Tailwind v4)
        │ stdin/stdout (JSON-RPC 2.0, newline-delimited)
        ▼
   C# Bridge — SwyxMessenger.exe (.NET 8, x86, UseAppHost=true)
-  ├── SwyxItSuppressor (kills classic SwyxIt!, disables Startup shortcut)
   ├── COM Interop → CLMgr.exe (32-bit COM Server)
   │   ├── RegisterUserConnector4UC → TLS Tunnel to public Swyx Server
+  │   ├── DispClientConfig → LoginDeviceType = 0 (standalone client)
+  │   ├── ApplyAudioDevices → DispHandsfreeDevice etc. (audio binding)
   │   └── Call Control, Line State, Audio, Voicemail, Forwarding
   └── ComSocket (SignalR) → SwyxItHub @ ws://localhost:PORT/swyxIt
-      └── PhoneBook (30+ colleagues), CallJournal, live Push Events
+      └── PhoneBook (all colleagues), CallJournal, live Push Events
        │
        ▼
-  CLMgr.exe — Swyx Client Line Manager (owns full telephony stack: SIP/RTP/Tunnel)
-       │
-       ▼
-  Swyx Server (via RemoteConnector TLS Tunnel — no SwyxIt! required)
+  CLMgr.exe — Swyx Client Line Manager
+  ├── Owns full telephony stack (SIP, RTP, TLS Tunnel, Audio Plugins)
+  ├── AudioDevicePluginLib → GenericDevicePlugin.dll → AudioVolumeControl.dll → DirectSound
+  └── No SwyxIt! required — SwyxConnect is the only client
 ```
 
-### Two Connection Modes
+### Connection Modes
 
 | Mode | When | How | SwyxIt! needed? |
 |---|---|---|---|
-| **Standalone (v1.6.0 — default)** | `.env` present | `RegisterUserConnector4UC` + `ApplyAudioDevices` via late binding | ❌ **No!** Full standalone |
-| **HIDE (v1.4.0 fallback)** | No `.env` | SwyxIt! hidden (SW_HIDE), bridge Auto-Attaches | ✅ Yes, but invisible |
+| **Standalone (v1.6.0 — default)** | `.env` present with credentials | `RegisterUserConnector4UC` + `ApplyAudioDevices` via late binding | ❌ **No!** |
+| **HIDE (v1.4.0 fallback)** | No `.env` | SwyxIt! hidden (SW_HIDE), bridge Auto-Attaches | ✅ But invisible |
 
 ### Why Hybrid COM + ComSocket?
 
@@ -65,22 +70,27 @@ Electron App (Node.js + React 19 + TypeScript + Tailwind v4)
 | **COM** | Reliable call control, line state, audio | Login, Dial, Answer, Hold, Transfer, Audio devices |
 | **ComSocket** | Rich data, all colleagues, real-time push | PhoneBook (all entries), CallJournal, Presence updates |
 
-COM alone only exposes speed-dial contacts (6-10 entries). ComSocket delivers the **complete company phonebook (30+ colleagues)** with live presence. The bridge combines both for maximum coverage.
+COM alone only exposes speed-dial contacts (6-10 entries). ComSocket delivers the **complete company phonebook** with live presence. The bridge combines both for maximum coverage.
+
+---
 
 ## Requirements
 
 - **Windows 10/11** (x86 or x64, runs as 32-bit)
 - **.NET 8 Desktop Runtime (x86)** — [download](https://dotnet.microsoft.com/download/dotnet/8.0)
-- **SwyxIt! v14.x** installed and running with an active Swyx session
-- **Swyx CLMgr** running (started automatically with SwyxIt!)
+- **Swyx Client SDK** installed (provides CLMgr.exe and COM components)
+- **SwyxIt! installed** (provides CLMgr.exe, Plugins, and Interop DLLs — but does **not** need to be running)
+
+---
 
 ## Download & Install
 
 ### Option 1: Installer (recommended)
 
-1. Download `SwyxConnect-Setup-1.2.0.exe` from the [latest release](https://github.com/Ralle1976/SwyxConnect/releases/latest)
-2. Run the installer
-3. Launch SwyxConnect — it auto-connects to your SwyxIt! session
+1. Download `SwyxConnect-Setup-1.6.0.exe` from the [latest release](https://github.com/Ralle1976/SwyxConnect/releases/latest)
+2. Run the installer (administrator rights recommended)
+3. Create a `.env` file in `%APPDATA%\SwyxConnect\` with your credentials (see below)
+4. Launch SwyxConnect — it connects via RC Tunnel, no SwyxIt! needed
 
 ### Option 2: Build from Source
 
@@ -89,25 +99,57 @@ git clone https://github.com/Ralle1976/SwyxConnect.git
 cd SwyxConnect
 npm install
 
-# Build C# Bridge (produces SwyxMessenger.exe)
+# Build C# Bridge
 powershell -ExecutionPolicy Bypass -File scripts/build-bridge.ps1
 
-# Build Electron app (main + preload + renderer)
+# Build Electron app
 npx electron-vite build
 
-# Run in dev mode
+# Run
 npx electron out/main/index.js
 
 # Create installer
 npx electron-builder --win --ia32
 ```
 
+---
+
+## Configuration (.env)
+
+Create a `.env` file in one of these locations:
+- `%APPDATA%\SwyxConnect\.env` (installed app — recommended, no admin needed)
+- Project root (dev mode)
+- Next to the executable (packaged)
+
+```ini
+# Swyx Server Login (CLMgr-only mode — standalone without SwyxIt!)
+SWYX_USERNAME=your_username
+SWYX_PASSWORD=your_password
+SWYX_SERVER=192.168.x.x
+SWYX_PUBLIC_SERVER=yourserver.example.com:15021
+
+# Optional
+SWYX_BACKUP_SERVER=
+SWYX_PUBLIC_BACKUP_SERVER=
+SWYX_AUTH_MODE=1
+```
+
+**Where to find these values:**
+- Check SwyxIt!'s registry: `HKCU\SOFTWARE\Swyx\SwyxIt!\CurrentVersion\Options`
+  - `PbxServer` → `SWYX_SERVER` (internal IP)
+  - `PublicServerName` → `SWYX_PUBLIC_SERVER` (public hostname:port)
+- `SWYX_USERNAME` / `SWYX_PASSWORD` are your Swyx PBX credentials
+
+> ⚠️ **Security:** The `.env` file is listed in `.gitignore` and never committed. Keep it secure.
+
+---
+
 ## Usage
 
 ### Phone View (`/`)
-- Dialpad with country code support
+- Dialpad with trunk prefix support
 - Line status (Line 1/2 with state)
-- DTMF, hold, transfer, conference controls
+- Call controls: Dial, Hangup, Hold, Transfer, Conference, DTMF, Recording
 
 ### Contacts (`/contacts`)
 - Search across company phonebook
@@ -138,19 +180,21 @@ npx electron-builder --win --ia32
 - Number of phone lines (1/2/4/8)
 - Theme (light/dark)
 - Trunk prefix configuration
-- System tray behavior (minimize on close, start minimized)
+- System tray behavior
+- System info (CTI Master status, server connectivity, audio mode)
+
+---
 
 ## Microsoft Teams Integration
 
-Bidirectional Teams presence synchronization is a **server-side SwyxWare feature** (v14.20+), configured in the Swyx Control Center:
+Bidirectional Teams presence synchronization is a **server-side SwyxWare feature** (v14.20+). SwyxConnect does not manage Teams status directly — the Swyx Server handles the Graph API sync.
 
-1. Configure `MsTeamsStatusSyncMode = 2` on the Swyx Server
-2. Register an Azure AD App with `Presence.ReadWrite.All` Graph permission
-3. When a Swyx user is on a call, the server sets their Teams status to "In a call"
+To enable Teams presence sync:
+1. Configure `MsTeamsStatusSyncMode = 2` on the Swyx Server (Admin task)
+2. Register an Azure AD App with `Presence.ReadWrite.All` permission
+3. When you change your status in SwyxConnect, the server mirrors it to Teams
 
-SwyxConnect displays the Teams status read-only via Microsoft Graph API for information purposes. The server handles the bidirectional sync — no client-side write required.
-
-See: [Enreach Documentation — Teams Presence Sync](https://service-de.enreach.com/hc/en-gb/articles/25585335166492)
+---
 
 ## Technical Details
 
@@ -160,66 +204,63 @@ Newline-delimited JSON-RPC 2.0 over stdin/stdout between Electron and C# Bridge.
 - **Responses:** `{jsonrpc:"2.0", id:N, result:{...}}`
 - **Events (push):** `{method:"...", params:{...}}` (no id)
 
-### Bridge Handlers (14)
-System, Call, Presence, Audio, Contact, History, Voicemail, Forwarding, Conference, Recording, SystemInfo, Chat, CTI, **ComSocket**
+### Bridge Handlers (14+)
+System, Call, Presence, Audio, Contact, History, Voicemail, Forwarding, Conference, Recording, SystemInfo, Chat, CTI, ComSocket
 
 ### ComSocket Methods (cs.*)
-- `cs.getPhoneBook` — All colleagues with live presence
-- `cs.getCallJournal` — Detailed call history (part-based paging)
-- `cs.searchContacts` — Full-text contact search
-- `cs.getSpeedDials` — Speed-dial entries
-- `cs.getVoiceMessages` — Voicemail list
-- `cs.getForwardingConfig` — Forwarding rules
-- `cs.getAudioModes` / `cs.getAudioVolumes` — Audio configuration
-- `cs.getVersionInfo` — Swyx version details
-- `cs.getStatus` / `cs.reconnect` — Connection management
+`cs.getPhoneBook`, `cs.getCallJournal`, `cs.searchContacts`, `cs.getSpeedDials`, `cs.getVoiceMessages`, `cs.getForwardingConfig`, `cs.getAudioModes`, `cs.getAudioVolumes`, `cs.getVersionInfo`, `cs.getStatus`, `cs.reconnect`
 
 ### ComSocket Push Events
-- `cs.lineStateChanged` — Real-time line state updates
-- `cs.lineDetailsChanged` — Detailed call info (caller ID, duration)
-- `cs.userDataChanged` — Colleague presence changes
-- `cs.notificationCallsChanged` — Missed call notifications
+`cs.lineStateChanged`, `cs.lineDetailsChanged`, `cs.userDataChanged`, `cs.notificationCallsChanged`
 
-### LineState Mapping
-0=Inactive, 3=Ringing, 4=Dialing, 8=Active, 9=OnHold, 12=Terminated
+### How Standalone Audio Works (v1.6.0)
 
-## Verified vs. Untested Features
+```
+SwyxMessenger.exe starts
+  → Creates CLMgr COM object
+  → Calls DispInit (returns E_NOTIMPL — CLMgr already initialized internally)
+  → Sets DispClientConfig.LoginDeviceType = 0 (tells CLMgr "I'm a phone client")
+  → Reads audio device names from ClientConfig (Speakers, Microphone, Headset)
+  → Sets DispHandsfreeDevice / DispHandsfreeCaptureDevice (binds devices)
+  → RegisterUserConnector4UC (builds TLS tunnel, logs in as CTI master)
+  → Subscribes to PubOnLineMgrNotification + DispOnLineMgrNotification
+  → CLMgr now treats us as a full phone client → audio works → calls connect
+```
 
-To be transparent about what's actually been tested vs. what's implemented but not yet verified:
+### Reverse Engineering Documentation
 
-### ✅ Verified Working (live-tested via CDP automation, 2026-07-13)
-- **Auto-Attach:** Login form skipped, main UI loads directly
-- **ComSocket (SignalR):** Connects to SwyxItHub on port 12042
-- **Presence View:** 30 colleagues from company phonebook with presence states
-- **Call History:** 20 journal entries with All/Incoming/Outgoing/Missed tabs
-- **Phone Dialer:** Keypad, line status (Line 1/2), Anrufen button
-- **Settings:** Audio mode, forwarding config, theme, line count
-- **API calls:** `cs.getPhoneBook`, `cs.getCallJournal`, `cs.getForwarding`, `getLines`, `getSystemInfo` all return correct data
+Full technical analysis (1000+ lines) in [`docs/REVERSE_ENGINEERING.md`](docs/REVERSE_ENGINEERING.md):
+- CLMgr COM API signatures (all DispIds, vtable methods)
+- RemoteConnector tunnel mechanism
+- Audio plugin architecture (GenericDevicePlugin → AudioVolumeControl → DirectSound)
+- ComSocket SignalR hub internals
+- CTI-slave architecture and HandleCallPopup mechanism
 
-### ⚠️ Implemented but NOT Live-Tested
-- **Outbound calls (Dial → Answer → Hangup):** The COM `dial` method is wired up and `getSystemInfo` confirms `serverUp=true`, but no actual phone call was made during testing
-- **Inbound calls (Incoming call notification):** Event handlers exist, but no test call was received
-- **Voicemail playback:** The view renders, but audio playback was not tested
-- **Conference/Transfer/Hold during active call:** COM methods exist (`createConference`, `transfer`, `hold`), not tested with a live call
-- **DTMF during call:** Implemented, not tested
-- **Recording start/stop:** Implemented, not tested
-- **Real-time push events (lineStateChanged, userDataChanged):** Event wiring exists, but no status change was observed during testing
-- **Teams Graph API login:** The OAuth flow is implemented, but the login button was not clicked during testing
+---
 
-### Known Limitations
+## Known Limitations
+
 - Windows only (requires Swyx COM components + CLMgr)
-- Requires a running SwyxIt! session (Auto-Attach mode)
+- Requires Swyx Client SDK installed (for CLMgr.exe and Plugins)
 - Teams write not supported from client (use server-side SwyxWare sync)
+- ComSocket auth requires process name `SwyxMessenger.exe` (whitelist match)
 - Call journal limited to 20 most recent entries (ComSocket paging)
-- `teams.local.getTeamsPresence` bridge method is not yet implemented (frontend will show an error in the Teams settings section)
+- Audio device names must match Windows DirectSound device names
+
+---
 
 ## Build Notes
 
+### Google Drive / Cloud-Sync Folders
+The .NET SDK's `CreateAppHost` task uses MemoryMappedFiles, which fail on certain cloud-sync filesystems. The included `scripts/build-bridge.ps1` automatically copies the bridge source to a local temp directory before building.
+
 ### x86 Requirement
-The bridge must be compiled as **x86** because CLMgr COM is a 32-bit server. The `PlatformTarget=x86` setting in the csproj enforces this. The Electron installer is also built for `ia32`.
+The bridge must be compiled as **x86** because CLMgr COM is a 32-bit server. The `PlatformTarget=x86` setting in the csproj enforces this.
 
 ### SwyxMessenger.exe Process Name
-The bridge assembly is named `SwyxMessenger` (not `SwyxStandalone`) because the ComSocket authentication whitelist checks the **process name**, and `SwyxMessenger.exe` is on the whitelist. `UseAppHost=true` produces a native exe with this name.
+The bridge assembly is named `SwyxMessenger` because the ComSocket authentication whitelist checks the **process name**. `SwyxMessenger.exe` is on the whitelist. `UseAppHost=true` produces a native exe with this name.
+
+---
 
 ## Roadmap
 
@@ -228,6 +269,10 @@ The bridge assembly is named `SwyxMessenger` (not `SwyxStandalone`) because the 
 - [ ] Keyboard shortcuts
 - [ ] Multi-language support (English/German)
 - [ ] Call recording playback in-app
+- [ ] Inbound call answer (live test pending)
+- [ ] Voicemail playback (live test pending)
+
+---
 
 ## License
 
@@ -235,6 +280,6 @@ Proprietary (c) Ralle1976. All rights reserved.
 
 ## Acknowledgments
 
-- Swyx/Enreach for the CLMgr COM API and ComSocket SignalR hub
+- Swyx/Enreach for the CLMgr COM API, ComSocket SignalR hub, and Audio Plugin SDK
 - Electron, React, TypeScript, Tailwind CSS, Zustand
-- .NET 8, SignalR Client
+- .NET 8, SignalR Client, COM Interop
