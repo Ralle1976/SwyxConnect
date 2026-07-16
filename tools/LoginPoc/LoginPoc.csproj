@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- .NET Framework 4.8 — die Swyx-DLLs sind .NET Framework 4.x, mit .NET 8 gibt es
+         Binding-Konflikte bei System.ServiceModel. .NET Framework 4.8 bringt WCF nativ mit. -->
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <Nullable>disable</Nullable>
+    <LangVersion>10</LangVersion>
+    <RootNamespace>LoginPoc</RootNamespace>
+    <AssemblyName>LoginPoc</AssemblyName>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <!-- Swyx DLLs: referenced directly from the SwyxIt! installation folder. -->
+  <ItemGroup>
+    <Reference Include="IpPbxCDSClientLib">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxCDSClientLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbxCDSSharedLib">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxCDSSharedLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbx.Configuration.Model">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbx.Configuration.Model.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbx.Web.Model">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbx.Web.Model.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbxTracing">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxTracing.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbxWin32">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxWin32.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
