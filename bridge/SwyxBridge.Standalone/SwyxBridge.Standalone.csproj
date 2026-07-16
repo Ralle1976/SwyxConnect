@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- .NET Framework 4.8: WCF ist nativ, Swyx-DLLs sind .NET Framework 4.x.
+         .NET 8 hat WCF-Binding-Konflikte (System.ServiceModel 4.0 vs 6.0).
+         Bewiesen lauffähig mit LoginPoc (2026-07-16). -->
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>SwyxBridge.Standalone</RootNamespace>
+    <AssemblyName>SwyxMessenger</AssemblyName>
+    <UseAppHost>true</UseAppHost>
+    <Version>1.7.0</Version>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <!-- Swyx DLLs: direkt aus der SwyxIt!-Installation referenziert.
+       Private=false: sie sollen nicht ins Output kopiert werden (CLMgr hat sie sowieso geladen). -->
+  <ItemGroup>
+    <Reference Include="IpPbxCDSClientLib">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxCDSClientLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbxCDSSharedLib">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxCDSSharedLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbx.Configuration.Model">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbx.Configuration.Model.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbx.Web.Model">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbx.Web.Model.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbxTracing">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxTracing.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="IpPbxWin32">
+      <HintPath>C:\Program Files (x86)\Swyx\SwyxIt!\IpPbxWin32.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- net48-kompatible NuGet-Packages -->
+  <ItemGroup>
+    <!-- System.Text.Json 7.x = letzte net48-kompatible Version -->
+    <PackageReference Include="System.Text.Json" Version="7.0.3" />
+    <!-- SignalR Client 6.x = letzte net48-kompatible Major-Version -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="6.0.25" />
+  </ItemGroup>
+
+</Project>
