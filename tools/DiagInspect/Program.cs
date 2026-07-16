@@ -149,6 +149,7 @@ internal static class Program
         //   dial <number>           — live SIP dial (DANGEROUS: calls a real number!)
         //   playsound <wav-path>    — play WAV file locally (NO call, safe test)
         //   ring                    — play ringback tone (KlingelnExtern.wav) locally
+        //   audio                   — deep audio vtable diagnosis (IClientLineMgrEx8)
         if (args.Length >= 1)
         {
             switch (args[0])
@@ -162,10 +163,141 @@ internal static class Program
                 case "ring":
                     DoPlaySound(clmgr!, @"C:\Program Files (x86)\Swyx\SwyxIt!\KlingelnExtern.wav");
                     break;
+                case "audio":
+                    DoAudioVtableDiag(clmgr!);
+                    break;
             }
         }
 
         try { Marshal.FinalReleaseComObject(clmgr); } catch { }
+    }
+
+    /// <summary>
+    /// Deep audio diagnosis via IClientLineMgrEx8 vtable (read-only).
+    /// Calls three methods to reveal what audio binding SwyxIt! established:
+    ///   1. IsAudioConfigured — is audio bound at all?
+    ///   2. GetUsedWaveDevices — the 3 active devices (voice/handsfree/ringing)
+    ///   3. GetAvailableWaveDevicesEx — all available devices
+    ///
+    /// IMPORTANT: A direct vtable cast (IClientLineMgrEx8)clmgr CRASHES with 0xC0000005
+    /// because CLMgr is an OUT-OF-PROCESS COM server (32-bit) and IClientLineMgrEx8 has
+    /// no registered Proxy/Stub — only IClientLineMgrDisp (the dispatch interface) is
+    /// marshalled correctly. We MUST use IDispatch::Invoke (late binding by name).
+    /// </summary>
+    private static void DoAudioVtableDiag(dynamic clmgr)
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== Audio Diagnosis (via IDispatch late binding) ===");
+        Console.WriteLine("Read-only inspection — no modifications to CLMgr session.");
+        Console.WriteLine();
+        Console.WriteLine("NOTE: vtable interface IClientLineMgrEx8 cannot be used directly");
+        Console.WriteLine("      (no registered Proxy/Stub for out-of-process COM).");
+        Console.WriteLine("      Using IDispatch::Invoke via Type.InvokeMember by name.");
+        Console.WriteLine();
+
+        // These method names are the vtable method names — COM dispatches them by name
+        // through IDispatch::GetIDsOfNames + IDispatch::Invoke. Safe and correct.
+
+        // 1. IsAudioConfigured (3 out params)
+        Console.WriteLine("--- IsAudioConfigured ---");
+        try
+        {
+            // out params via InvokeMember: pass a wrapper array; the runtime fills them.
+            object?[] args = new object?[] { 0, 0, 0 };
+            clmgr.GetType().InvokeMember("IsAudioConfigured",
+                System.Reflection.BindingFlags.InvokeMethod
+                | System.Reflection.BindingFlags.IgnoreReturn, null, clmgr, args);
+            Console.WriteLine($"  configured: {args[0]} ({((((int)args[0]!) != 0) ? "YES" : "NO")})");
+            Console.WriteLine($"  isPnPDevice: {args[1]}");
+            Console.WriteLine($"  pnpDevicePresent: {args[2]}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ERR: {ex.Message}");
+            for (var i = ex.InnerException; i != null; i = i.InnerException)
+                Console.WriteLine($"    inner: {i.Message}");
+        }
+        Console.WriteLine();
+
+        // 2. GetUsedWaveDevices — try via dispatch
+        // NOTE: This has 3 out params of struct type, which InvokeMember can't easily marshal.
+        // We attempt it; if it fails we know we need a different approach.
+        Console.WriteLine("--- GetUsedWaveDevices (3 active bindings) ---");
+        Console.WriteLine("  (Likely to fail: struct out-params via IDispatch are tricky.)");
+        try
+        {
+            // Pass placeholder args — the actual struct marshalling is uncertain.
+            // If this crashes, we know to fall back to GetAudioMode (simpler signal).
+            object?[] args = new object?[] { null, null, null };
+            clmgr.GetType().InvokeMember("GetUsedWaveDevices",
+                System.Reflection.BindingFlags.InvokeMethod, null, clmgr, args);
+            Console.WriteLine($"  VOICE: {args[0]}");
+            Console.WriteLine($"  HANDSFREE: {args[1]}");
+            Console.WriteLine($"  RINGING: {args[2]}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ERR: {ex.Message}");
+            for (var i = ex.InnerException; i != null; i = i.InnerException)
+                Console.WriteLine($"    inner: {i.Message}");
+        }
+        Console.WriteLine();
+
+        // 3. GetAudioMode (simple int out) — the simplest signal
+        Console.WriteLine("--- GetAudioMode ---");
+        try
+        {
+            object?[] args = new object?[] { 0 };
+            clmgr.GetType().InvokeMember("GetAudioMode",
+                System.Reflection.BindingFlags.InvokeMethod, null, clmgr, args);
+            int mode = (int)args[0]!;
+            string modeName = mode switch
+            {
+                0 => "None", 1 => "Handset", 2 => "Headset", 3 => "Handsfree",
+                _ => $"Unknown({mode})"
+            };
+            Console.WriteLine($"  AudioMode: {mode} ({modeName})");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ERR: {ex.Message}");
+            for (var i = ex.InnerException; i != null; i = i.InnerException)
+                Console.WriteLine($"    inner: {i.Message}");
+        }
+        Console.WriteLine();
+
+        // 4. Simple audio-state queries via dispatch (should work)
+        Console.WriteLine("--- Simple audio queries via dispatch ---");
+        ReadInt(clmgr, "DispHandsfreeAvailable", "HF available");
+        ReadInt(clmgr, "DispHeadsetAvailable", "HS available");
+        ReadInt(clmgr, "DispHandsetAvailable", "Handset available");
+        ReadInt(clmgr, "DispAudioMode", "DispAudioMode");
+        ReadInt(clmgr, "DispMicroEnabled", "MicroEnabled");
+        ReadInt(clmgr, "DispSpeakerEnabled", "SpeakerEnabled");
+        Console.WriteLine();
+
+        Console.WriteLine("=== Diagnosis complete ===");
+        Console.WriteLine();
+        Console.WriteLine("If 'IsAudioConfigured' shows 'YES' here, then SwyxIt! has bound audio");
+        Console.WriteLine("via some mechanism we haven't replicated. If it shows 'NO' or ERR,");
+        Console.WriteLine("then the dispatch interface can't reveal it — we'd need to compare");
+        Console.WriteLine("the Standalone-Bridge state instead.");
+    }
+
+    /// <summary>
+    /// Pretty-prints a CLMgrSoundDeviceDescriptionEx struct.
+    /// </summary>
+    private static void DumpDevice(in CLMgrSoundDeviceDescriptionEx d, string indent)
+    {
+        Console.WriteLine($"{indent}VisibleDeviceName: '{d.m_bstrVisibleDeviceName}'");
+        Console.WriteLine($"{indent}  IsDirectX: {d.m_bIsDirectXSoundDevice}  HasPlayer: {d.m_bHasPlayer}  HasRecorder: {d.m_bHasRecorder}");
+        Console.WriteLine($"{indent}  HasMixer: {d.m_bHasMixer}  HasDxAudioRenderer: {d.m_bHasDxAudioRenderer}");
+        Console.WriteLine($"{indent}  DeviceIdPlayer:   '{d.m_bstrDeviceIdPlayer}'");
+        Console.WriteLine($"{indent}  DeviceIdRecorder: '{d.m_bstrDeviceIdRecorder}'");
+        Console.WriteLine($"{indent}  MixerName: '{d.m_bstrMixerName}'");
+        Console.WriteLine($"{indent}  Flags: Handset={d.m_bIsHandset} Headset={d.m_bIsHeadset} Speaker={d.m_bIsSpeaker}");
+        Console.WriteLine($"{indent}  Hook: USB={d.m_bHookSupportUSB} ComPort={d.m_bHookSupportComPort}({d.m_iComPort}) GamePort={d.m_bHookSupportGamePort} BT={d.m_bHookSupportBluetooth}");
+        Console.WriteLine($"{indent}  IsWellKnownDevice: {d.m_bIsWellKnownDevice}");
     }
 
     /// <summary>
@@ -202,8 +334,15 @@ internal static class Program
         catch (Exception ex)
         {
             Console.WriteLine($"[play] DispStartSoundFile failed: {ex.Message}");
-            // Try alternative: DispPlayToRtp (would need an active call though)
-            Console.WriteLine("[play] (Note: DispPlayToRtp requires an active call.)");
+            // Drill into InnerException (TargetInvocationException wraps the real COM error)
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+            {
+                Console.WriteLine($"[play]   inner: {inner.GetType().Name}: {inner.Message}");
+                if (inner is System.Runtime.InteropServices.COMException ce)
+                {
+                    Console.WriteLine($"[play]   HRESULT: 0x{ce.ErrorCode:X8}");
+                }
+            }
         }
 
         // Stop playback
@@ -217,8 +356,35 @@ internal static class Program
         }
         catch (Exception ex) { Console.WriteLine($"[play] Stop failed: {ex.Message}"); }
 
+        // Try alternative methods that may exist
+        Console.WriteLine();
+        Console.WriteLine("[play] Trying alternative APIs...");
+        TryAlt(clmgr, "DispStartSoundFileEx", wavPath);
+        TryAlt(clmgr, "PlaySoundFile", wavPath);
+        TryAlt(clmgr, "PlaySoundFileDxEx", wavPath);
+
         Console.WriteLine();
         Console.WriteLine("=== Did you hear the WAV (ringing tone)? ===");
+    }
+
+    private static void TryAlt(dynamic clmgr, string method, string wavPath)
+    {
+        try
+        {
+            clmgr.GetType().InvokeMember(method,
+                System.Reflection.BindingFlags.InvokeMethod, null, clmgr,
+                new object[] { wavPath });
+            Console.WriteLine($"[play] {method}({wavPath}) called OK");
+        }
+        catch (Exception ex)
+        {
+            Console.Write($"[play] {method} failed: {ex.Message}");
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+            {
+                Console.Write($" | inner: {inner.Message}");
+            }
+            Console.WriteLine();
+        }
     }
 
     /// <summary>
@@ -230,9 +396,24 @@ internal static class Program
     private static void DoDial(dynamic clmgr, string number)
     {
         Console.WriteLine();
-        Console.WriteLine($"=== COM Dial Test: '{number}' ===");
-        Console.WriteLine("Listen CAREFULLY: do you hear ringing? Audio? DTMF?");
+        Console.WriteLine($"=== SAFE COM Dial Test: '{number}' ===");
+        Console.WriteLine("Limit: 8 seconds. Watchdog: process kills itself if hangup fails.");
+        Console.WriteLine("Listen CAREFULLY: ringing? audio? DTMF?");
         Console.WriteLine();
+
+        // SAFETY: register Ctrl+C handler + unhandled-exception handler that hangs up.
+        // This prevents being stuck in a call if the main loop crashes.
+        Console.CancelKeyPress += (s, e) =>
+        {
+            Console.Error.WriteLine("[SAFETY] Ctrl+C pressed — emergency hangup.");
+            ForceHangup(clmgr);
+            Environment.Exit(2);
+        };
+        AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+        {
+            Console.Error.WriteLine("[SAFETY] Unhandled exception — emergency hangup.");
+            ForceHangup(clmgr);
+        };
 
         // Try DispSimpleDialEx3(number, lineNum=0, bProcessNumber=0, name="")
         try
@@ -245,7 +426,6 @@ internal static class Program
         catch (Exception ex)
         {
             Console.WriteLine($"[dial] DispSimpleDialEx3 failed: {ex.Message}");
-            // Fallback: DispSelectedLine.DispDial
             try
             {
                 var sel = clmgr.GetType().InvokeMember("DispSelectedLine",
@@ -260,8 +440,8 @@ internal static class Program
             catch (Exception ex2) { Console.WriteLine($"[dial] Fallback failed: {ex2.Message}"); }
         }
 
-        // Poll line state for 15 seconds
-        for (int i = 1; i <= 15; i++)
+        // Poll line state for 10 seconds (a bit longer for audio evaluation)
+        for (int i = 1; i <= 10; i++)
         {
             System.Threading.Thread.Sleep(1000);
             try
@@ -285,17 +465,55 @@ internal static class Program
             catch (Exception ex) { Console.WriteLine($"  {i,2}s: ERR {ex.Message}"); }
         }
 
-        // Hangup
+        // HANGUP — multiple fallbacks to guarantee the call ends
+        ForceHangup(clmgr);
+
+        Console.WriteLine();
+        Console.WriteLine("=== Did you hear ANYTHING? (ringing/DTMF/voice/silence) ===");
+    }
+
+    /// <summary>
+    /// Tries multiple methods to hang up. MUST succeed or the user is stuck in a call.
+    /// </summary>
+    private static void ForceHangup(dynamic clmgr)
+    {
+        // Attempt 1: DispHookOn on CLMgr top-level
         try
         {
             clmgr.GetType().InvokeMember("DispHookOn",
                 System.Reflection.BindingFlags.InvokeMethod, null, clmgr, null);
-            Console.WriteLine("[dial] Hangup (DispHookOn) called.");
+            Console.WriteLine("[hangup] DispHookOn OK (method 1)");
+            return;
         }
-        catch { }
+        catch (Exception ex) { Console.WriteLine($"[hangup] method 1 failed: {ex.Message}"); }
 
-        Console.WriteLine();
-        Console.WriteLine("=== Did you hear ANYTHING? (ringing/DTMF/voice/silence) ===");
+        // Attempt 2: DispSelectedLine.DispHookOn
+        try
+        {
+            var sel = clmgr.GetType().InvokeMember("DispSelectedLine",
+                System.Reflection.BindingFlags.GetProperty, null, clmgr, null);
+            if (sel != null)
+            {
+                sel.GetType().InvokeMember("DispHookOn",
+                    System.Reflection.BindingFlags.InvokeMethod, null, sel, null);
+                Console.WriteLine("[hangup] DispSelectedLine.DispHookOn OK (method 2)");
+                return;
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"[hangup] method 2 failed: {ex.Message}"); }
+
+        // Attempt 3: ReleaseUserEx (nuclear option — logs out entirely)
+        try
+        {
+            clmgr.GetType().InvokeMember("ReleaseUserEx",
+                System.Reflection.BindingFlags.InvokeMethod, null, clmgr, null);
+            Console.WriteLine("[hangup] ReleaseUserEx OK (method 3 - NUCLEAR)");
+            return;
+        }
+        catch (Exception ex) { Console.WriteLine($"[hangup] method 3 failed: {ex.Message}"); }
+
+        Console.Error.WriteLine("[SAFETY] All hangup methods failed. Call may still be active!");
+        Console.Error.WriteLine("[SAFETY] Kill CLMgr.exe manually if needed: taskkill /IM CLMgr.exe /F");
     }
 
     // Use Type.InvokeMember for reliable late-binding (avoids DISPID(0) default-member issues).
